@@ -1,0 +1,439 @@
+{
+  "summary": "Pass20 correction: 0x35/0x36/0x37 are static background-derived variants. The observed animated tile case is visual id 0x01F3, decoded as bank 4 tile 48; the EXE draw branch alternates it with the paired bank 4 tile 0 graphic.",
+  "exe_evidence": [
+    {
+      "sam1_offsets": [
+        "0xE6ED",
+        "0xF609",
+        "0xFBBC",
+        "0x101AC"
+      ],
+      "condition": "cmp ax,0x01F3",
+      "behaviour": "if DS:6840 == 0x10 draw from one bitmap offset, otherwise draw from a second bitmap offset"
+    },
+    {
+      "map_code": "0x60",
+      "runtime_cell": "cA=0x01F3",
+      "atlas_ref": "bank 4 tile 48"
+    }
+  ],
+  "animated_tiles": [
+    {
+      "normal_ref": {
+        "bank": 4,
+        "tile": 48
+      },
+      "frames": [
+        {
+          "bank": 4,
+          "tile": 48
+        },
+        {
+          "bank": 4,
+          "tile": 0
+        }
+      ],
+      "period_ticks": 8,
+      "note": "EXE special-case for visual id 0x01F3: bank 4 tile 48 alternates with bank 4 tile 0."
+    }
+  ],
+  "map_codes_using_animated_tiles": [
+    {
+      "map_code": "0x60",
+      "draw_ref": {
+        "dx": 0,
+        "dy": 0,
+        "bank": 4,
+        "tile": 48
+      },
+      "runtime_writes": [
+        {
+          "dx": 0,
+          "dy": 0,
+          "c6": "0x0002",
+          "c8": "0x0000",
+          "cA": "0x01F3",
+          "body_solid": false,
+          "foot_solid": false,
+          "context": "mission_main"
+        }
+      ]
+    }
+  ],
+  "static_background_variants": [
+    {
+      "background_code": 209,
+      "base": {
+        "bank": 11,
+        "tile": 8
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 11,
+          "tile": 9
+        },
+        "0x36": {
+          "bank": 11,
+          "tile": 10
+        },
+        "0x37": {
+          "bank": 11,
+          "tile": 11
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 213,
+      "base": {
+        "bank": 11,
+        "tile": 12
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 11,
+          "tile": 13
+        },
+        "0x36": {
+          "bank": 11,
+          "tile": 14
+        },
+        "0x37": {
+          "bank": 11,
+          "tile": 15
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 217,
+      "base": {
+        "bank": 11,
+        "tile": 16
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 11,
+          "tile": 17
+        },
+        "0x36": {
+          "bank": 11,
+          "tile": 18
+        },
+        "0x37": {
+          "bank": 11,
+          "tile": 19
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 233,
+      "base": {
+        "bank": 11,
+        "tile": 32
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 11,
+          "tile": 33
+        },
+        "0x36": {
+          "bank": 11,
+          "tile": 34
+        },
+        "0x37": {
+          "bank": 11,
+          "tile": 35
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 237,
+      "base": {
+        "bank": 11,
+        "tile": 36
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 11,
+          "tile": 37
+        },
+        "0x36": {
+          "bank": 11,
+          "tile": 38
+        },
+        "0x37": {
+          "bank": 11,
+          "tile": 39
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 241,
+      "base": {
+        "bank": 11,
+        "tile": 40
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 11,
+          "tile": 41
+        },
+        "0x36": {
+          "bank": 11,
+          "tile": 42
+        },
+        "0x37": {
+          "bank": 11,
+          "tile": 43
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 245,
+      "base": {
+        "bank": 11,
+        "tile": 44
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 11,
+          "tile": 45
+        },
+        "0x36": {
+          "bank": 11,
+          "tile": 46
+        },
+        "0x37": {
+          "bank": 11,
+          "tile": 47
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 325,
+      "base": {
+        "bank": 9,
+        "tile": 24
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 9,
+          "tile": 25
+        },
+        "0x36": {
+          "bank": 9,
+          "tile": 26
+        },
+        "0x37": {
+          "bank": 9,
+          "tile": 27
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 329,
+      "base": {
+        "bank": 9,
+        "tile": 28
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 9,
+          "tile": 29
+        },
+        "0x36": {
+          "bank": 9,
+          "tile": 30
+        },
+        "0x37": {
+          "bank": 9,
+          "tile": 31
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 333,
+      "base": {
+        "bank": 9,
+        "tile": 32
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 9,
+          "tile": 33
+        },
+        "0x36": {
+          "bank": 9,
+          "tile": 34
+        },
+        "0x37": {
+          "bank": 9,
+          "tile": 35
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 337,
+      "base": {
+        "bank": 9,
+        "tile": 36
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 9,
+          "tile": 37
+        },
+        "0x36": {
+          "bank": 9,
+          "tile": 38
+        },
+        "0x37": {
+          "bank": 9,
+          "tile": 39
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 341,
+      "base": {
+        "bank": 9,
+        "tile": 40
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 9,
+          "tile": 41
+        },
+        "0x36": {
+          "bank": 9,
+          "tile": 42
+        },
+        "0x37": {
+          "bank": 9,
+          "tile": 43
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 501,
+      "base": {
+        "bank": 1,
+        "tile": 0
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 1,
+          "tile": 1
+        },
+        "0x36": {
+          "bank": 1,
+          "tile": 2
+        },
+        "0x37": {
+          "bank": 1,
+          "tile": 3
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 667,
+      "base": {
+        "bank": 6,
+        "tile": 16
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 6,
+          "tile": 17
+        },
+        "0x36": {
+          "bank": 6,
+          "tile": 18
+        },
+        "0x37": {
+          "bank": 6,
+          "tile": 19
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 695,
+      "base": {
+        "bank": 6,
+        "tile": 44
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 6,
+          "tile": 45
+        },
+        "0x36": {
+          "bank": 6,
+          "tile": 46
+        },
+        "0x37": {
+          "bank": 6,
+          "tile": 47
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 767,
+      "base": {
+        "bank": 8,
+        "tile": 16
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 8,
+          "tile": 17
+        },
+        "0x36": {
+          "bank": 8,
+          "tile": 18
+        },
+        "0x37": {
+          "bank": 8,
+          "tile": 19
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    },
+    {
+      "background_code": 771,
+      "base": {
+        "bank": 8,
+        "tile": 20
+      },
+      "static_variant_codes": {
+        "0x35": {
+          "bank": 8,
+          "tile": 21
+        },
+        "0x36": {
+          "bank": 8,
+          "tile": 22
+        },
+        "0x37": {
+          "bank": 8,
+          "tile": 23
+        }
+      },
+      "note": "Static background/light variants, not animation phases."
+    }
+  ]
+}

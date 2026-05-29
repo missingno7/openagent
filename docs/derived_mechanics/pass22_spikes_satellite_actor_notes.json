@@ -1,0 +1,90 @@
+{
+  "spike_position_correction": {
+    "raw_codes": {
+      "floor": "0x3F",
+      "ceiling": "0x41"
+    },
+    "reason": "The previous decoded-coordinate renderer applied the EXE half-tile sprite-origin offset a second time. Draw origins are corrected up by 8 pixels: floor spikes draw at the map-cell Y, ceiling spikes at Y-16.",
+    "bank4_floor_tiles": "20..27",
+    "bank4_ceiling_tiles": "28..35"
+  },
+  "rotating_satellite": {
+    "raw_code": "0x23",
+    "special_actor_table": {
+      "token_offset": "0x3A69",
+      "raw_code": 35,
+      "raw_code_hex": "0x23",
+      "case_addr": "0x12224",
+      "object_id": 151,
+      "object_id_hex": "0x0097",
+      "step_px": null,
+      "behavior_state": 32,
+      "timer_period": 3,
+      "timer_period_random": null,
+      "aux_dc": null,
+      "random_initial_direction": false
+    },
+    "decoded_tile_family": "bank 10 tiles 0..3",
+    "implemented_frames": [
+      [
+        10,
+        0
+      ],
+      [
+        10,
+        1
+      ],
+      [
+        10,
+        2
+      ],
+      [
+        10,
+        3
+      ]
+    ],
+    "period_ticks": 3
+  },
+  "bank2_6e_actor": {
+    "raw_code": "0x6E",
+    "special_actor_table": {
+      "token_offset": "0x3A73",
+      "raw_code": 110,
+      "raw_code_hex": "0x6E",
+      "case_addr": "0x12A21",
+      "object_id": 133,
+      "object_id_hex": "0x0085",
+      "step_px": 2,
+      "behavior_state": 38,
+      "timer_period": null,
+      "timer_period_random": {
+        "random_max_exclusive": 20,
+        "add": 30
+      },
+      "aux_dc": 3,
+      "random_initial_direction": true
+    },
+    "correction": "Use bank 2 tiles 32..35 only. Tiles 36..39 are a different blue actor family, not the left-facing half of 0x6E. Left motion is mirrored at draw time."
+  },
+  "bank5_7f_actor": {
+    "raw_code": "0x7F",
+    "special_actor_table": {
+      "token_offset": "0x3A79",
+      "raw_code": 127,
+      "raw_code_hex": "0x7F",
+      "case_addr": "0x12F27",
+      "object_id": 609,
+      "object_id_hex": "0x0261",
+      "step_px": 2,
+      "behavior_state": 6,
+      "timer_period": 2,
+      "timer_period_random": null,
+      "aux_dc": null,
+      "random_initial_direction": true
+    },
+    "decoded_tile_family": "bank 5 tiles 8..11",
+    "implemented_step_px": 2,
+    "implemented_timer_period": 2,
+    "draw_note": "Single 4-frame family mirrored for left movement."
+  }
+}

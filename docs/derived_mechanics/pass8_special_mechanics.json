@@ -1,0 +1,24 @@
+{
+  "glasses": {
+    "raw_code": "0x72",
+    "visual": "bank 5 tile 6 / visual 0x0272",
+    "exe_evidence": [
+      "SAM1 0x1867 compares AX with 0x72 and redraws neighboring cells",
+      "SAM1 0x1CC0 compares actor/object visual word with 0x0272 and enters a special draw/effect branch"
+    ],
+    "implemented_effect": "collecting 0x72 enables hidden platforms"
+  },
+  "hidden_platform": {
+    "hidden_raw_code": "0xD3",
+    "active_collision_code": "0xD7",
+    "visual": "bank 5 tile 7 / visual 0x02D3",
+    "before_glasses": "not drawn, no body collision, no foot collision",
+    "after_glasses": "drawn and replayed as EXE foot-solid one-way writes from raw 0xD7"
+  },
+  "player_jump": {
+    "start_flag": "DS:69F5=1",
+    "timer_init": "DS:69F6=0x23",
+    "movement_model": "fixed tick table displacement, not vy += gravity * dt",
+    "current_state": "code now uses ticked displacement scaffold; exact initialized DS table still pending"
+  }
+}

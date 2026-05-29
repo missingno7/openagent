@@ -33,6 +33,9 @@ from .exe_actor_mechanics import (
     BANK14_GUARD_SHOOT_TIMER_RANGE_BY_BASE_TILE,
     BANK14_GUARD_SPEED_BY_BASE_TILE,
     deterministic_range,
+    spike_frame_for_timer,
+    spike_is_dangerous,
+    SPIKE_CYCLE_TICKS,
 )
 from .level_model import build_runtime_collision_grid, cells_at, codes_at, iter_map_cells
 from .loader import Campaign, ensure_editor_importable, load_campaign
@@ -141,7 +144,7 @@ class OpenAgentApp:
         self.level_image: Image.Image | None = None
         self.level_photo: ImageTk.PhotoImage | None = None
         self.frame_photo: ImageTk.PhotoImage | None = None
-        self.entities = LevelEntities([], [], [], [])
+        self.entities = LevelEntities([], [], [], [], [])
         self.collected_cells: set[tuple[int, int, int, str]] = set()
         self.opened_doors: set[tuple[int, int, int, str]] = set()
         self.owned_keys: set[int] = set()
@@ -153,6 +156,8 @@ class OpenAgentApp:
         self._entity_accum = 0.0
         self._collision_grid_cache = None
         self._collision_grid_cache_key = None
+        self.anim_ticks = 0
+        self._level_image_phase: int | None = None
         self.last_tick = time.perf_counter()
 
         self.root = tk.Tk()
@@ -263,9 +268,7 @@ class OpenAgentApp:
         self.load_level(reset_player=True)
 
     def load_level(self, *, reset_player: bool) -> None:
-        renderer = SecretAgentRenderer(self.episode)
-        self.rebuild_level_image()
-        self.entities = LevelEntities([], [], [], []) if self.is_world_map else extract_level_entities(self.episode.levels[self.level_index])
+        self.entities = LevelEntities([], [], [], [], []) if self.is_world_map else extract_level_entities(self.episode.levels[self.level_index])
         if reset_player and not self.is_world_map:
             self.collected_cells.clear()
             self.opened_doors.clear()
@@ -274,19 +277,34 @@ class OpenAgentApp:
             self.ammo = 0
             self.hurt_flash = 0.0
             self.has_glasses = False
+            self.anim_ticks = 0
         if reset_player:
             if self.is_world_map:
                 spawn = self.last_world_position or self.find_world_spawn()
                 self.player = Player(spawn[0], spawn[1])
             else:
                 self.player = Player(*self.find_spawn())
+        # Re-render after gameplay state has been reset.  This matters for
+        # hidden platforms, collected cells and animated tile phase cache.
+        self.rebuild_level_image()
         self.last_tick = time.perf_counter()
         self.draw()
 
     def rebuild_level_image(self) -> None:
-        renderer = SecretAgentRenderer(self.episode)
         self._collision_grid_cache = None
         self._collision_grid_cache_key = None
+        self._level_image_phase = None
+        self.render_level_image_for_phase(self.current_tile_anim_tick())
+
+    def current_tile_anim_tick(self) -> int:
+        # Background codes 0x35..0x37 are static; only specific runtime draw
+        # tiles have animation branches.  Keep the clock on the DOS tick counter
+        # because the EXE selects animated graphics from global draw/timer state,
+        # not from the modern Tk redraw cadence.
+        return self.anim_ticks
+
+    def render_level_image_for_phase(self, anim_tick: int) -> None:
+        renderer = SecretAgentRenderer(self.episode)
         skip_codes = set()
         skip_cells = set()
         if not self.is_world_map:
@@ -305,7 +323,9 @@ class OpenAgentApp:
             show_unknown=self.show_unknown,
             skip_codes=skip_codes,
             skip_cells=skip_cells,
+            anim_tick=anim_tick,
         )
+        self._level_image_phase = anim_tick
 
     def find_spawn(self) -> tuple[float, float]:
         info = self.episode.levels[self.level_index]
@@ -515,11 +535,16 @@ class OpenAgentApp:
         self._entity_accum = min(self._entity_accum + dt, 0.15)
         while self._entity_accum >= 1.0 / DOS_TICK_HZ:
             self._entity_accum -= 1.0 / DOS_TICK_HZ
+            self.anim_ticks += 1
             self.update_entities_tick()
         self.update_projectiles(dt)
 
     def update_entities_tick(self) -> None:
         dt = 1.0 / DOS_TICK_HZ
+        for spike in self.entities.spike_traps:
+            spike.timer_ticks += 1
+            if spike.timer_ticks >= SPIKE_CYCLE_TICKS:
+                spike.timer_ticks = 0
         for platform in self.entities.platforms:
             carry_player = self.platform_below() is platform and self.player.grounded
             old_x = platform.x
@@ -943,6 +968,7 @@ class OpenAgentApp:
     def update_player_interactions(self, dt: float) -> None:
         self.collect_touching_codes()
         self.collect_rip_enemies()
+        self.check_spike_touch()
         self.check_enemy_touch(dt)
 
     def player_overlapping_cells(self):
@@ -1000,6 +1026,27 @@ class OpenAgentApp:
             kept.append(enemy)
         self.entities.enemies = kept
 
+
+    def check_spike_touch(self) -> None:
+        if self.hurt_flash > 0:
+            return
+        p = self.player
+        left, top = p.x, p.y
+        right, bottom = p.x + PLAYER_W - 1, p.y + PLAYER_H - 1
+        for spike in self.entities.spike_traps:
+            if not spike_is_dangerous(spike.timer_ticks):
+                continue
+            sx = spike.x
+            sy = spike.draw_y
+            if right < sx + 2 or left > sx + TILE - 3:
+                continue
+            if bottom < sy + 2 or top > sy + TILE - 3:
+                continue
+            self.hurt_flash = 0.75
+            self.player.jump_anim_timer = 0
+            self.player.grounded = False
+            break
+
     def check_enemy_touch(self, dt: float) -> None:
         if self.hurt_flash > 0:
             self.hurt_flash = max(0.0, self.hurt_flash - dt)
@@ -1043,6 +1090,9 @@ class OpenAgentApp:
         return x, y
 
     def draw(self) -> None:
+        current_phase = self.current_tile_anim_tick()
+        if self.level_image is None or (not self.is_world_map and self._level_image_phase != current_phase):
+            self.render_level_image_for_phase(current_phase)
         if self.level_image is None:
             return
         cam_x, cam_y = self.camera()
@@ -1114,9 +1164,23 @@ class OpenAgentApp:
             if animated is not None:
                 tile = self.episode.tiles16.get(*animated)
                 if tile:
+                    # Some special actors are stored as a single 4-frame family
+                    # in the atlas and the EXE mirrors/draws them according to
+                    # DS:34E2 rather than using a separate second 4-tile block.
+                    # 0x6E was previously interpreted as bank2 32..35 + 36..39,
+                    # but 36..39 are a separate blue actor family.  0x7F is the
+                    # same pattern for bank5 8..11.
+                    if enemy.code in {0x6E, 0x7F} and enemy.direction < 0:
+                        tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                     frame.alpha_composite(tile, (int(enemy.x - cam_x), int(enemy.y - cam_y)))
                     continue
             self.draw_code_sprite(frame, enemy.code, int(enemy.x - cam_x), int(enemy.y - cam_y))
+        for spike in self.entities.spike_traps:
+            tile_ref = spike_frame_for_timer(spike.kind, spike.timer_ticks)
+            if tile_ref is not None:
+                tile = self.episode.tiles16.get(*tile_ref)
+                if tile:
+                    frame.alpha_composite(tile, (int(spike.x - cam_x), int(spike.draw_y - cam_y)))
         draw = ImageDraw.Draw(frame)
         for shot in self.entities.projectiles:
             x = int(shot.x - cam_x)

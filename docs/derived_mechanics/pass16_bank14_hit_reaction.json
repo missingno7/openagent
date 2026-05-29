@@ -1,0 +1,12 @@
+{
+  "bank14_damage_chain": [32, 24, 16, 8, 0, 40],
+  "back_shot_interpretation": "A back shot is still a damaging hit; it additionally rewrites the guard direction so the guard faces the player.",
+  "runtime_change": "Removed the pass15 early return for back shots.  Direction flips first, then normal degrade/RIP logic runs.",
+  "exe_fields": {
+    "active_visual": "DS:34E0 + slot*0x20",
+    "direction": "DS:34E2 + slot*0x20",
+    "frame_counter": "DS:34D6 + slot*0x20",
+    "timer": "DS:34DA + slot*0x20",
+    "period": "DS:34D8 + slot*0x20"
+  }
+}

@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+BANK14_CODES = {
+    0x38: {"bank": 14, "base_tile": 0, "shoots": False},
+    0x39: {"bank": 14, "base_tile": 8, "shoots": False},
+    0x30: {"bank": 14, "base_tile": 16, "shoots": False},
+    0x67: {"bank": 14, "base_tile": 24, "shoots": True},
+    0x47: {"bank": 14, "base_tile": 32, "shoots": True},
+}
+
+EXE_FINDINGS = {
+    "actor_table_context": "SAM1 special-low map token table around 0x3A59/0x267C3 initializes these raw bytes as actor-backed cells, not static collision sprites.",
+    "actor_record": "The active sprite/object id is stored in DS:34E0 + slot*0x20; direction in DS:34E2, frame counter in DS:34D6, timer in DS:34DA, period in DS:34D8.",
+    "rip_visual_id": "0x027E is the RIP/grave runtime visual id; the actor transition code writes it to runtime cell +0x1CA and clears +0x1CC.",
+    "shot_rip_score": "The branch comparing AX with 0x027B removes the object, calls the score popup helper, and adds 0x01F4 (500) to DS:699A/699C.",
+    "pickup_rip_score": "The branch comparing AX with 0x027E can add 0x61A8 (25000) to DS:699A/699C under its game-state conditions.",
+    "user_observed_damage_chain": "Bank 14 groups begin at tiles 0, 8, 16, 24, 32.  Projectile hits degrade to the lower group; tile 0 hit becomes tile 40 RIP.",
+}
+
+
+def main() -> int:
+    out_dir = Path("docs/derived_mechanics")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    data = {"bank14_codes": {f"0x{k:02X}": v for k, v in BANK14_CODES.items()}, "exe_findings": EXE_FINDINGS}
+    (out_dir / "pass14_bank14_guard_mechanics.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+    print(out_dir / "pass14_bank14_guard_mechanics.json")
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

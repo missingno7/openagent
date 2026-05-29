@@ -1,0 +1,268 @@
+{
+  "summary": "Secret Agent level backgrounds are encoded as four adjacent 16x16 tiles. The same data path is exposed by map tokens 0x35,0x36,0x37, which draw phase offsets from the active background block. OpenAgent now advances that block once every four DOS ticks.",
+  "background_animation_groups": [
+    {
+      "background_code": 209,
+      "bank": 11,
+      "frames": [
+        8,
+        9,
+        10,
+        11
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 209 -> bank 11 tiles 8..11"
+    },
+    {
+      "background_code": 213,
+      "bank": 11,
+      "frames": [
+        12,
+        13,
+        14,
+        15
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 213 -> bank 11 tiles 12..15"
+    },
+    {
+      "background_code": 217,
+      "bank": 11,
+      "frames": [
+        16,
+        17,
+        18,
+        19
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 217 -> bank 11 tiles 16..19"
+    },
+    {
+      "background_code": 233,
+      "bank": 11,
+      "frames": [
+        32,
+        33,
+        34,
+        35
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 233 -> bank 11 tiles 32..35"
+    },
+    {
+      "background_code": 237,
+      "bank": 11,
+      "frames": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 237 -> bank 11 tiles 36..39"
+    },
+    {
+      "background_code": 241,
+      "bank": 11,
+      "frames": [
+        40,
+        41,
+        42,
+        43
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 241 -> bank 11 tiles 40..43"
+    },
+    {
+      "background_code": 245,
+      "bank": 11,
+      "frames": [
+        44,
+        45,
+        46,
+        47
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 245 -> bank 11 tiles 44..47"
+    },
+    {
+      "background_code": 325,
+      "bank": 9,
+      "frames": [
+        24,
+        25,
+        26,
+        27
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 325 -> bank 9 tiles 24..27"
+    },
+    {
+      "background_code": 329,
+      "bank": 9,
+      "frames": [
+        28,
+        29,
+        30,
+        31
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 329 -> bank 9 tiles 28..31"
+    },
+    {
+      "background_code": 333,
+      "bank": 9,
+      "frames": [
+        32,
+        33,
+        34,
+        35
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 333 -> bank 9 tiles 32..35"
+    },
+    {
+      "background_code": 337,
+      "bank": 9,
+      "frames": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 337 -> bank 9 tiles 36..39"
+    },
+    {
+      "background_code": 341,
+      "bank": 9,
+      "frames": [
+        40,
+        41,
+        42,
+        43
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 341 -> bank 9 tiles 40..43"
+    },
+    {
+      "background_code": 501,
+      "bank": 1,
+      "frames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 501 -> bank 1 tiles 0..3"
+    },
+    {
+      "background_code": 667,
+      "bank": 6,
+      "frames": [
+        16,
+        17,
+        18,
+        19
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 667 -> bank 6 tiles 16..19"
+    },
+    {
+      "background_code": 695,
+      "bank": 6,
+      "frames": [
+        44,
+        45,
+        46,
+        47
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 695 -> bank 6 tiles 44..47"
+    },
+    {
+      "background_code": 767,
+      "bank": 8,
+      "frames": [
+        16,
+        17,
+        18,
+        19
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 767 -> bank 8 tiles 16..19; blue water animation"
+    },
+    {
+      "background_code": 771,
+      "bank": 8,
+      "frames": [
+        20,
+        21,
+        22,
+        23
+      ],
+      "ticks_per_frame": 4,
+      "data_source": "BACKGROUND_MAP four-tile block; 0x35/0x36/0x37 select the other three phases",
+      "note": "SAMLEV background code 771 -> bank 8 tiles 20..23; water/metal animation block"
+    }
+  ],
+  "tile_refs_that_land_inside_background_animation_blocks": [
+    {
+      "raw_code": 187,
+      "relx": 0,
+      "rely": 0,
+      "bank": 6,
+      "tile": 44,
+      "matching_background_codes": [
+        695
+      ]
+    },
+    {
+      "raw_code": 188,
+      "relx": 0,
+      "rely": 0,
+      "bank": 6,
+      "tile": 47,
+      "matching_background_codes": [
+        695
+      ]
+    },
+    {
+      "raw_code": 189,
+      "relx": 0,
+      "rely": 0,
+      "bank": 6,
+      "tile": 45,
+      "matching_background_codes": [
+        695
+      ]
+    },
+    {
+      "raw_code": 190,
+      "relx": 0,
+      "rely": 0,
+      "bank": 6,
+      "tile": 46,
+      "matching_background_codes": [
+        695
+      ]
+    }
+  ]
+}

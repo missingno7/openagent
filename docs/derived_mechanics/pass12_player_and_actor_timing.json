@@ -1,0 +1,24 @@
+{
+  "player_vertical": {
+    "jump_flag": "DS:6EC1",
+    "vertical_counter": "DS:34EA",
+    "table_address": "DS:34AF",
+    "jump_start": {"DS:6EC1": 1, "DS:34EA": 0},
+    "jump_transition": "when DS:34EA == 0x0A, clear DS:6EC1 and set DS:34EA to 9",
+    "table": [0, 8, 8, 8, 4, 4, 2, 2, 2, 1, 1, 2, 2, 2, 4, 4, 8, 8, 8, 8]
+  },
+  "player_shooting": {
+    "state_right": "0x0B",
+    "state_left": "0x0C",
+    "decoded_bank": 13,
+    "decoded_tile_right": 10,
+    "decoded_tile_left": 11,
+    "render_formula": "tile = DS:3500 + floor(DS:34F6 / 5), with DS:34F6 reset to 1 for non-walking states"
+  },
+  "actor_timing": {
+    "tick_hz": 18.2065,
+    "frame_counter": "DS:34D6 + slot*0x20",
+    "direction": "DS:34E2 + slot*0x20",
+    "sprite_base": "DS:34E0 + slot*0x20"
+  }
+}

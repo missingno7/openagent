@@ -10,12 +10,17 @@ from .exe_actor_mechanics import (
     SPECIAL_ACTOR_MODELS,
     deterministic_direction,
     deterministic_range,
+    spike_initial_timer,
+    SPIKE_PERIOD_TICKS,
 )
 from .semantics import (
     BANK14_GUARD_CODES,
     BANK14_GUARD_INFO,
+    CEILING_SPIKE_CODE,
+    FLOOR_SPIKE_CODE,
     MOVING_PLATFORM_CODE,
     RIDING_ENEMY_CODE,
+    SPIKE_TRAP_CODES,
     WALKER_ENEMY_CODES,
 )
 
@@ -32,6 +37,7 @@ WALKER_STEP_BY_CODE: dict[int, int] = {
     0x75: 1,  # EXE stores 0 here; this actor's full state logic is not yet implemented.
     0x76: 1,  # EXE stores 0 here; this actor's full state logic is not yet implemented.
     0x6E: SPECIAL_ACTOR_MODELS[0x6E].step_px,
+    0x7F: SPECIAL_ACTOR_MODELS[0x7F].step_px,
 }
 
 @dataclass
@@ -106,6 +112,26 @@ class Enemy:
         return self.shoot_interval_ticks > 0 and not self.is_rip
 
 
+
+@dataclass
+class SpikeTrap:
+    x: float
+    y: float
+    code: int
+    kind: str
+    # EXE actor field DS:34DA.  Initialized to random(0x1E), then incremented
+    # every actor tick.  0..0x1D = idle; 0x1E..0x3B = visible extension cycle.
+    timer_ticks: int = 0
+    period_ticks: int = SPIKE_PERIOD_TICKS
+
+    @property
+    def draw_y(self) -> float:
+        # In the raw EXE the spike helper applies a half-tile sprite-origin
+        # correction.  After converting actor slot coordinates into decoded
+        # level coordinates that correction must be shifted up by 8 px; the
+        # previous pass displayed both spike variants half a tile too low.
+        return self.y - 16 if self.kind == "ceiling" else self.y
+
 @dataclass
 class Projectile:
     x: float
@@ -130,14 +156,27 @@ class LevelEntities:
     enemies: list[Enemy]
     projectiles: list[Projectile]
     score_popups: list[ScorePopup]
+    spike_traps: list[SpikeTrap]
 
 
 def extract_level_entities(info: LevelInfo) -> LevelEntities:
     platforms: list[MovingPlatform] = []
     enemies: list[Enemy] = []
+    spike_traps: list[SpikeTrap] = []
     for cell in iter_map_cells(info):
         if cell.code == MOVING_PLATFORM_CODE:
             platforms.append(MovingPlatform(float(cell.x * TILE), float(cell.y * TILE), direction=-1, step_px=1))
+        elif cell.code in SPIKE_TRAP_CODES:
+            kind = "ceiling" if cell.code == CEILING_SPIKE_CODE else "floor"
+            spike_traps.append(
+                SpikeTrap(
+                    float(cell.x * TILE),
+                    float(cell.y * TILE),
+                    code=cell.code,
+                    kind=kind,
+                    timer_ticks=spike_initial_timer(cell.code, cell.x, cell.y),
+                )
+            )
         elif cell.code in BANK14_GUARD_CODES:
             model = BANK14_GUARD_INFO[cell.code]
             base_tile = int(model["base_tile"])
@@ -178,4 +217,4 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     object_id=actor_model.object_id if actor_model else 0,
                 )
             )
-    return LevelEntities(platforms, enemies, [], [])
+    return LevelEntities(platforms, enemies, [], [], spike_traps)

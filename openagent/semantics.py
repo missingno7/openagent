@@ -21,7 +21,10 @@ WORLD_TREE_CODES = frozenset({0x42, 0x43, 0x44, 0x45, 0x46, 0x47})
 WORLD_BLOCKED_CODES = frozenset({0x00, 0x20}) | WORLD_WATER_CODES | WORLD_COAST_CODES | WORLD_TREE_CODES
 MOVING_PLATFORM_CODE = 0x62
 RIDING_ENEMY_CODE = 0x65
-WALKER_ENEMY_CODES = frozenset({0x65, 0x6E, 0x75, 0x76})
+WALKER_ENEMY_CODES = frozenset({0x65, 0x6E, 0x75, 0x76, 0x7F})
+FLOOR_SPIKE_CODE = 0x3F
+CEILING_SPIKE_CODE = 0x41
+SPIKE_TRAP_CODES = frozenset({FLOOR_SPIKE_CODE, CEILING_SPIKE_CODE})
 # Bank-14 human guard family.  These raw map bytes are not normal static
 # sprites: the EXE special-low actor table creates actor records for them and
 # the active sprite lives in actor field DS:34E0, not in the runtime cell.
@@ -224,7 +227,7 @@ MISSION_PASSABLE_CODES = frozenset(
     if code_known_to_exe_collision_table(code)
     and not exe_code_has_body_solid(code)
 )
-DYNAMIC_MISSION_CODES = frozenset({MISSION_PLAYER_START_CODE, MOVING_PLATFORM_CODE}) | WALKER_ENEMY_CODES | BANK14_GUARD_CODES
+DYNAMIC_MISSION_CODES = frozenset({MISSION_PLAYER_START_CODE, MOVING_PLATFORM_CODE}) | WALKER_ENEMY_CODES | BANK14_GUARD_CODES | SPIKE_TRAP_CODES
 
 
 def mission_code_semantics(code: int) -> CodeSemantics | None:
