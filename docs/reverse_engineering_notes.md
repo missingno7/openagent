@@ -1,5 +1,12 @@
 # Reverse Engineering Notes
 
+This file keeps the original project orientation notes.  For current gameplay
+and EXE-derived hard assumptions, start with:
+
+- `docs/reverse_engineering_status.md`
+- `docs/exe_mechanisms_summary.md`
+- `docs/gameplay_research.md`
+
 ## Starting Inputs
 
 - `OpenCrystalCaves` provides a C++20/SDL source port for a closely related
@@ -65,19 +72,23 @@ Crystal Caves naming differs:
 
 ## Immediate Work Queue
 
-1. Promote the editor's proven loaders into OpenAgent runtime APIs:
-   - keep a three-episode aggregate campaign model;
-   - expose 16x16 tiles, 8x8 sprites, PCX screens, levels, sounds, CFG, and EXE
-     metadata by episode.
-2. Prove the `.SND` transform:
+1. Finish original world-map behavior:
+   - recover world-map collision from the EXE;
+   - recover entrance-to-level mapping instead of relying only on row-major
+     entrance order.
+2. Finish mission interaction dispatch:
+   - follow runtime cell `+0x1CA` branches for keys, doors, exits, teleporters,
+     toggles and non-score pickups;
+   - keep raw-code semantics as evidence-backed tables, not visual guesses.
+3. Continue actor branch recovery:
+   - replace remaining state/speed/timer fallbacks with exact actor dispatcher
+     branches;
+   - keep dynamic actor markers out of the static background render.
+4. Prove the `.SND` transform:
    - locate the sound file open/read path for `SAM101E.SND` etc.;
    - compare read buffer post-processing against OCC `Sound` records;
    - produce decoded WAV/RAW previews once the transform is known.
-3. Replace prototype runtime behavior:
-   - derive real solid/platform/hazard behavior from map codes and EXE logic;
-   - add player sprites, animation, shooting, damage, items, doors, teleporters,
-     and world-map progression.
-4. Decide final engine substrate:
+5. Decide final engine substrate:
    - keep the Python prototype as a fast RE harness;
    - port proven behavior into a C++/SDL OpenCrystalCaves-style runtime once the
      data model and gameplay rules are stable enough.

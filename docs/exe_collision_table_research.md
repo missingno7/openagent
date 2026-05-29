@@ -1,5 +1,15 @@
 # EXE-derived Secret Agent collision table
 
+Status: superseded first-pass extraction.  Keep this file as historical
+evidence, but do not use it as the current mission collision source.  The newer
+pipeline is `docs/runtime_collision_table_research.md`,
+`docs/exe_runtime_mechanisms_pass2.md`, `docs/exe_mechanisms_pass5.md`, and the
+generated `openagent/exe_runtime_collision.py`.
+
+Most importantly, this first pass did not include the later mission parser
+contexts and therefore gave the wrong current conclusion for bytes such as
+`0x70`.
+
 This table is extracted from the map-token routine in the unpacked DOS executables, not from visual heuristics. The extractor is `tools/extract_sa_collision_table.py`.
 
 ## What the routine does

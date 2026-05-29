@@ -1,5 +1,14 @@
 # EXE runtime mechanisms pass 2
 
+Status note: the setter branch findings in this file are still current, but the
+cell address formula shown below was corrected in pass 5.  Use the column-major
+formula from `docs/exe_mechanisms_pass5.md` and
+`docs/reverse_engineering_status.md`:
+
+```text
+cell = buffer + ((tile_x + 1) * 0xC8) + ((tile_y + 1) << 3)
+```
+
 This pass continues from `runtime_collision_table_research.md` and replaces the
 last visual-footprint collision approximation with an EXE-style runtime-cell
 replay.

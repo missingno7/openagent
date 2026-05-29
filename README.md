@@ -14,14 +14,11 @@ This workspace starts from three local inputs:
 
 ## Current Status
 
-The first milestone is not a playable engine yet. It is a reproducible
-reverse-engineering baseline:
-
-- identify which Secret Agent files match Crystal Caves-era formats directly;
-- isolate which formats need reconstruction from the SAM executable code;
-- keep offsets, strings, and asset facts in versionable docs and scripts;
-- use OpenCrystalCaves as the reference implementation for engine structure,
-  rendering concepts, and file-format expectations.
+The project is a Python reverse-engineering harness and early playable runtime,
+not a complete source port yet.  It already loads all three episodes through the
+original data files, reconstructs much of the EXE-derived mission collision
+model, and promotes many moving objects from static map bytes into runtime
+actors.
 
 Run the current inventory tool with:
 
@@ -66,19 +63,21 @@ Prototype controls:
 - Platform levels: arrows/WASD move, Space jumps.
 - Global: PgUp/PgDn changes level, Q/E changes episode, M opens the world map,
   R resets, Tab toggles raw map codes, U toggles unknown-code markers, and C
-  toggles the current collision heuristic.
+  toggles collision debug display.
 
 ## Near-Term Port Plan
 
 1. Promote `secret_agent_editor` loaders into stable OpenAgent asset APIs for
    16x16 tiles, 8x8 sprites, level archives, PCX screens, sound records, config,
    and EXE-derived metadata.
-2. Replace the prototype collision heuristic with Secret Agent's real tile and
-   object behavior.
+2. Continue replacing prototype fallbacks with Secret Agent's real tile, object,
+   actor and interaction behavior.
 3. Add the original player sprite/animation, weapons, hazards, enemies, items,
    doors, teleporters, world-map progression, UI, sound, and menus.
 4. Keep the aggregate campaign model: one runtime, three episodes, loaded from
    the original data files.
 
-See `docs/reverse_engineering_notes.md`, `docs/gameplay_research.md`, and
-`docs/asset_inventory.md` for the current findings.
+Start with `docs/reverse_engineering_status.md` for current hard assumptions,
+`docs/exe_mechanisms_summary.md` for the cleaned-up EXE pass index, and
+`docs/gameplay_research.md` for the gameplay-oriented overview.  The older pass
+documents remain as audit logs of how each conclusion was reached.
