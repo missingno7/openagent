@@ -181,3 +181,89 @@ order is data-derived but not yet proven against original code.
    decorative, pickup, enemy, hazard, door, teleporter, exit, and blueprint.
 4. Port OCC's state/update/render separation into OpenAgent once Secret Agent
    entity semantics are more complete.
+
+## Collision Routine Findings (2026-05-29 pass)
+
+The platform-level collision path is now less heuristic. The important routine is
+around `SAM1_unpacked_linear_8086.asm:0xB7D9` and equivalent code appears in the
+other episodes. It does **not** simply test the full 16x16 sprite rectangle.
+Instead it computes four point probes from the player's pixel origin:
+
+- left body x = `player_x + 3`
+- right body x = `player_x + 12`
+- top body y = `player_y`
+- bottom body y = `player_y + 15`
+
+Each probe is converted to a 16x16 tile coordinate with `shr 4`. The original
+runtime then adds one to both tile coordinates because the in-memory cell buffer
+has a padded border. The cell address calculation is:
+
+```text
+cell = runtime_map + ((tile_y + 1) * 0xC8) + ((tile_x + 1) << 3)
+```
+
+So each runtime map cell is 8 bytes wide, and the row stride is 200 bytes. The
+current interpretation of the visible fields is:
+
+- `+0x1C6`: first visual/logical code layer;
+- `+0x1C8`: second visual/logical code layer;
+- `+0x1CA`: third visual/logical code layer;
+- `+0x1CC`: normal solid/body collision byte;
+- `+0x1CD`: a second collision byte used by downward/floor/platform probes;
+- `+0x1CE`: likely another per-cell flag, still unlabelled.
+
+The helper at `SAM1 0x1059E` writes those per-cell fields. Its arguments include
+three code values and two one-byte collision flags, then it redraws the affected
+16x16 cell. This explains why the game can remove pickups, open doors, and alter
+cells without reparsing the raw level archive.
+
+The Python runtime now mirrors the proven parts:
+
+- player drawing still uses a 16x16 sprite, but body collision uses the EXE's
+  narrower `x+3..x+12, y..y+15` hitbox;
+- collision code is isolated in `openagent.collision` with the original runtime
+  offsets documented as constants;
+- map-cell lookup is aware of both BG and `*` overlay rows via `cells_at()`;
+- collectibles and opened doors are tracked as runtime cell-state overlays
+  rather than by mutating the original level bytes.
+
+Still open: the exact raw-map-code-to-`+0x1CC/+0x1CD` conversion table is not yet
+fully recovered. `is_mission_code_solid()` is therefore still the compatibility
+bridge between raw map codes and the runtime collision flags, but the player
+probe geometry and runtime-buffer model now match the original code much more
+closely.
+
+## Collision correction pass from playtest notes
+
+The previous prototype still treated too many visible map codes as blocking. The
+important correction is that collision cannot be derived from the anchor cell
+alone. The static SAMLEV/Camoto table used by `secret_agent_editor.mapping` is a
+4x3 relative draw matrix: one raw map byte can draw sprite parts in neighbouring
+visual cells. Therefore the runtime collision query now asks which raw code's
+visual footprint covers a cell (`visual_coverage_cells()`), rather than only
+reading raw bytes whose anchor is exactly at that visual coordinate.
+
+Concrete fixes applied from original-game playtesting/data comparison:
+
+- `0x70` is pass-through, not a wall.
+- `0x18` is pass-through.
+- `0xEA`, `0xEB`, and `0xEC` are pass-through.
+- `0xD2` is a one-way jump platform. It does not block body/head/horizontal
+  movement. It only catches a downward/falling player crossing the top edge of
+  the whole composite object. In the source mapping it is a 2x2 composite, so
+  only the top of the composite footprint is treated as floor; the lower visual
+  row is not a second invisible platform.
+
+The renderer now accepts `skip_codes`/`skip_cells`. OpenAgent uses this to avoid
+baking dynamic actors into the static background. Codes such as player start,
+moving platform, and moving enemy are extracted into runtime entities and then
+skipped in the background render, so they are no longer drawn once at their raw
+start position and again at their runtime position. Runtime-removed cells
+(collected pickups/opened doors) are also skipped by exact `(x, y, code, layer)`
+identity when the background is rebuilt.
+
+Jump constants were retuned closer to the observed platformer feel, but the exact
+fixed-point constants are still an open RE target. The current prototype uses a
+higher arc than the first pass (`JUMP_SPEED=285`, `GRAVITY=700`, `MAX_FALL=400`)
+so that one-way platform tests are usable while the original player-update
+routine is being recovered.

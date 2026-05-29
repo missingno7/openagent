@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .exe_runtime_collision import (
+    code_has_body_solid as exe_code_has_body_solid,
+    code_has_foot_solid as exe_code_has_foot_solid,
+    code_known_to_exe_collision_table,
+)
+
 
 WORLD_PLAYER_CODE = 0x59
 WORLD_ENTRANCE_CODES = frozenset({0x4D, 0x4F, 0x50})
@@ -15,6 +21,68 @@ WORLD_TREE_CODES = frozenset({0x42, 0x43, 0x44, 0x45, 0x46, 0x47})
 WORLD_BLOCKED_CODES = frozenset({0x00, 0x20}) | WORLD_WATER_CODES | WORLD_COAST_CODES | WORLD_TREE_CODES
 MOVING_PLATFORM_CODE = 0x62
 RIDING_ENEMY_CODE = 0x65
+WALKER_ENEMY_CODES = frozenset({0x65, 0x6E, 0x75, 0x76})
+# Bank-14 human guard family.  These raw map bytes are not normal static
+# sprites: the EXE special-low actor table creates actor records for them and
+# the active sprite lives in actor field DS:34E0, not in the runtime cell.
+# Atlas relation recovered from TILE_MAP/bank 14:
+#   0x38 -> tile 0, 0x39 -> tile 8, 0x30 -> tile 16,
+#   0x67 -> tile 24, 0x47 -> tile 32.
+# The two stronger variants shoot; hits degrade base_tile by 8 until tile 0,
+# then create the RIP object at tile 40.
+BANK14_GUARD_INFO: dict[int, dict[str, int | bool]] = {
+    0x38: {"base_tile": 0, "shoots": False},
+    0x39: {"base_tile": 8, "shoots": False},
+    0x30: {"base_tile": 16, "shoots": False},
+    0x67: {"base_tile": 24, "shoots": True},
+    0x47: {"base_tile": 32, "shoots": True},
+}
+BANK14_GUARD_CODES = frozenset(BANK14_GUARD_INFO)
+BANK14_GUARD_CODE_BY_BASE_TILE = {int(v["base_tile"]): k for k, v in BANK14_GUARD_INFO.items()}
+BANK14_RIP_TILE = 40
+BANK14_RIP_SHOT_SCORE = 500
+# User-verified against the original game: collecting the bank-14 grave/RIP
+# object is a 1000-point pickup. Earlier EXE pass over-read nearby 0x61A8
+# score logic from a different branch and made the popup fall back to 10K.
+BANK14_RIP_PICKUP_SCORE = 1000
+GLASSES_CODE = 0x72
+HIDDEN_PLATFORM_CODE = 0xD3
+ACTIVE_HIDDEN_PLATFORM_COLLISION_CODE = 0xD7
+
+# Score pickup mechanics recovered from the EXE interaction dispatcher.  The
+# runtime cell's +0x1CA visual id is compared against constants such as 0x25D,
+# 0x26A..0x26F, then the EXE adds the shown amount to DS:699A and calls the
+# small popup-spawn helper 0x55F0 with a one-based bank-10 tile id.  The values
+# here are keyed by raw SAM?03.GFX map byte after inverting the executable's
+# generated runtime-cell table.
+SCORE_POPUP_TILE_BY_VALUE = {
+    100: 16,
+    250: 17,
+    500: 18,
+    1000: 19,
+    2000: 20,
+    5000: 21,
+    10000: 22,
+}
+EXE_SCORE_PICKUP_VALUES: dict[int, int] = {
+    0x01: 1000,
+    0x4B: 500,
+    0x4E: 250,
+    0x50: 2000,
+    0x54: 1000,
+    0x57: 250,
+    0x5B: 1000,  # same visible money-bag sprite as 0x01 in current maps
+    0x5C: 500,
+    0x5D: 100,
+    0x64: 1000,
+    0x66: 500,
+    0x68: 100,
+    0x74: 500,
+    0x84: 500,
+    0x8C: 100,
+    0x8D: 100,
+    0x8E: 10000,
+}
 
 
 @dataclass(frozen=True)
@@ -78,6 +146,13 @@ MISSION_CODE_SEMANTICS: dict[int, CodeSemantics] = {
         bank=9,
         tile=0,
     ),
+    GLASSES_CODE: CodeSemantics(
+        "glasses",
+        "x-ray glasses / reveal glasses",
+        "EXE compares the object visual id against 0x0272 and takes a special drawing/mechanic branch; atlas maps raw 0x72 to bank 5 tile 6.",
+        bank=5,
+        tile=6,
+    ),
     0x2B: CodeSemantics(
         "key",
         "green key",
@@ -134,15 +209,79 @@ MISSION_PASSABLE_OBJECT_CODES = frozenset(
     if semantics.kind in {"player_start", "moving_platform", "enemy", "score_item", "ammo", "key"}
 )
 
-# These are map/environment bytes that the executable/render tables and level
-# data prove cannot behave like solid wall blocks. Codes 0x1E, 0x99, and 0xBE
-# appear directly underneath valid 0x59 start markers; 0x35-0x37 are background
-# shade variants handled specially by the original draw code.
-MISSION_PASSABLE_ENV_CODES = frozenset({0x1E, 0x35, 0x36, 0x37, 0x99, 0xBE})
-MISSION_PASSABLE_CODES = MISSION_PASSABLE_OBJECT_CODES | MISSION_PASSABLE_ENV_CODES
+# Runtime collision is now derived from the executable's map-token -> runtime-cell
+# setter calls.  Keep the older semantic names for UI/collectibles, but do not
+# drive wall/passability from hand-written visual guesses.
+MISSION_PASSABLE_ENV_CODES = frozenset()
+MISSION_ONE_WAY_PLATFORM_CODES = frozenset(
+    code for code in range(256)
+    if code_known_to_exe_collision_table(code)
+    and exe_code_has_foot_solid(code)
+    and not exe_code_has_body_solid(code)
+)
+MISSION_PASSABLE_CODES = frozenset(
+    code for code in range(256)
+    if code_known_to_exe_collision_table(code)
+    and not exe_code_has_body_solid(code)
+)
+DYNAMIC_MISSION_CODES = frozenset({MISSION_PLAYER_START_CODE, MOVING_PLATFORM_CODE}) | WALKER_ENEMY_CODES | BANK14_GUARD_CODES
+
+
+def mission_code_semantics(code: int) -> CodeSemantics | None:
+    return MISSION_CODE_SEMANTICS.get(code)
+
+
+def mission_code_kind(code: int) -> str | None:
+    semantics = mission_code_semantics(code)
+    return semantics.kind if semantics else None
+
+
+def score_value_for_code(code: int) -> int | None:
+    return EXE_SCORE_PICKUP_VALUES.get(code)
+
+
+def score_popup_tile_for_value(value: int) -> int | None:
+    return SCORE_POPUP_TILE_BY_VALUE.get(value)
+
+
+def is_collectible_code(code: int) -> bool:
+    return code in EXE_SCORE_PICKUP_VALUES or mission_code_kind(code) in {"score_item", "ammo", "key", "glasses"}
+
+
+def is_door_code(code: int) -> bool:
+    return mission_code_kind(code) == "door"
+
+
+def door_unlocked_by(code: int) -> int | None:
+    semantics = mission_code_semantics(code)
+    return semantics.key_code if semantics and semantics.kind == "door" else None
+
+
+def is_one_way_platform_code(code: int) -> bool:
+    return code in MISSION_ONE_WAY_PLATFORM_CODES
+
+
+def is_dynamic_mission_code(code: int) -> bool:
+    return code in DYNAMIC_MISSION_CODES
+
+
+def is_mission_code_body_solid(code: int) -> bool:
+    if code in (0, 0x20, ord("*")):
+        return False
+    if code_known_to_exe_collision_table(code):
+        return exe_code_has_body_solid(code)
+    return True
+
+
+def is_mission_code_floor_solid(code: int) -> bool:
+    if code in (0, 0x20, ord("*")):
+        return False
+    if code_known_to_exe_collision_table(code):
+        return exe_code_has_body_solid(code) or exe_code_has_foot_solid(code)
+    return True
 
 
 def is_mission_code_solid(code: int) -> bool:
-    if code in (0, 0x20, ord("*")):
-        return False
-    return code not in MISSION_PASSABLE_CODES
+    # Backwards-compatible name: normal body collision. Use
+    # is_mission_code_floor_solid() for downward/floor probes.
+    return is_mission_code_body_solid(code)
