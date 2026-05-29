@@ -47,6 +47,7 @@ from .exe_actor_mechanics import (
     CEILING_LASER_PROJECTILE_BANK,
     CEILING_LASER_PROJECTILE_TILES,
 )
+from .exe_runtime_collision import runtime_cell_writes_for_code
 from .level_model import build_runtime_collision_grid, cells_at, codes_at, iter_map_cells
 from .loader import Campaign, ensure_editor_importable, load_campaign
 from .semantics import (
@@ -156,6 +157,7 @@ class OpenAgentApp:
         self.canvas_w = GAME_VIEW_W * self.zoom
         self.canvas_h = GAME_VIEW_H * self.zoom + HUD_H
         self.level_image: Image.Image | None = None
+        self.foreground_image: Image.Image | None = None
         self.level_photo: ImageTk.PhotoImage | None = None
         self.frame_photo: ImageTk.PhotoImage | None = None
         self.entities = LevelEntities([], [], [], [], [], [], [], [], [])
@@ -312,6 +314,7 @@ class OpenAgentApp:
         self._collision_grid_cache = None
         self._collision_grid_cache_key = None
         self._level_image_phase = None
+        self.foreground_image = None
         self.render_level_image_for_phase(self.current_tile_anim_tick())
 
     def current_tile_anim_tick(self) -> int:
@@ -334,15 +337,50 @@ class OpenAgentApp:
             if not self.has_glasses:
                 skip_codes.add(HIDDEN_PLATFORM_CODE)
             skip_cells = set(self.collected_cells) | set(self.opened_doors)
-        self.level_image = renderer.render(
-            self.level_index,
-            zoom=1,
-            show_codes=self.show_codes,
-            show_unknown=self.show_unknown,
-            skip_codes=skip_codes,
-            skip_cells=skip_cells,
-            anim_tick=anim_tick,
-        )
+        def is_static_front_cell(_x: int, _y: int, code: int, layer: str) -> bool:
+            if code in (0, 0x20):
+                return False
+            if layer == "fg":
+                return True
+            return any(write.cA for write in runtime_cell_writes_for_code(code))
+
+        if self.is_world_map:
+            self.foreground_image = None
+            self.level_image = renderer.render(
+                self.level_index,
+                zoom=1,
+                show_codes=self.show_codes,
+                show_unknown=self.show_unknown,
+                skip_codes=skip_codes,
+                skip_cells=skip_cells,
+                anim_tick=anim_tick,
+            )
+        else:
+            self.level_image = renderer.render(
+                self.level_index,
+                zoom=1,
+                show_codes=self.show_codes,
+                show_unknown=self.show_unknown,
+                show_bg=True,
+                show_fg=False,
+                skip_codes=skip_codes,
+                skip_cells=skip_cells,
+                anim_tick=anim_tick,
+                cell_filter=lambda x, y, code, layer: not is_static_front_cell(x, y, code, layer),
+            )
+            self.foreground_image = renderer.render(
+                self.level_index,
+                zoom=1,
+                show_codes=False,
+                show_unknown=False,
+                show_bg=True,
+                show_fg=True,
+                skip_codes=skip_codes,
+                skip_cells=skip_cells,
+                anim_tick=anim_tick,
+                transparent_base=True,
+                cell_filter=is_static_front_cell,
+            )
         self._level_image_phase = anim_tick
 
     def find_spawn(self) -> tuple[float, float]:
@@ -1435,8 +1473,18 @@ class OpenAgentApp:
             self.draw_world_player(frame, px, py)
             self.draw_world_entrance_numbers(frame, cam_x, cam_y)
         else:
-            self.draw_entities(frame, cam_x, cam_y)
+            # The main SAM1 frame path draws the player around 0x20CE..0x21E4,
+            # then starts iterating actor slots from DS:6826 = 2 at 0x227E.
+            # Normal static cells are baked into level_image underneath him.
+            # The EXE has a +0x1CA-only redraw routine at d93:2530/0xFE60.
+            # Composite static object/overlay cells after the player before
+            # drawing runtime actor slots. This is independent of source BG/FG:
+            # for example raw 0xEB is a BG cell but writes cA=0x02FC.
             self.draw_player_sprite(frame, px, py)
+            if self.foreground_image is not None:
+                fg = self.foreground_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + view_h))
+                frame.alpha_composite(fg)
+            self.draw_entities(frame, cam_x, cam_y)
 
         scaled_frame = frame.resize((view_w * self.zoom, view_h * self.zoom), Image.Resampling.NEAREST) if self.zoom != 1 else frame
         out_w = max(self.canvas_w, scaled_frame.width)

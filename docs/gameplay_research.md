@@ -29,7 +29,10 @@ visible tile coverage.
 cell = buffer + ((tile_x + 1) * 0xC8) + ((tile_y + 1) << 3)
 ```
 
-- `*` overlay rows write the overlay/object word but do not directly change
+- `+0x1CA` is the static object/foreground redraw path.  Normal BG codes can
+  feed it too; raw `0xEB` writes `cA=0x02FC` and therefore renders in front of
+  the player.
+- `*` overlay rows write the overlay/object word and do not directly change
   collision flags.
 - The current generated source for map-token writes is
   `openagent/exe_runtime_collision.py`.
@@ -38,7 +41,7 @@ Do not use these superseded shortcuts:
 
 - non-empty map code means solid;
 - collision follows the `TILE_MAP` visual footprint;
-- BG/FG rows are normal collision layers;
+- BG/FG rows are normal collision layers, or a generic draw-order switch;
 - the first `CS:2e20` token table decides current one-byte mission collision.
 
 Important examples:

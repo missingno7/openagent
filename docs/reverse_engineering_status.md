@@ -241,6 +241,17 @@ Hard facts:
   their runtime state.
 - Removed pickups/opened doors are runtime cell-state changes, not source-level
   mutations of `SAM?03.GFX`.
+- Mission base draw order from the EXE is: static non-object cell redraw,
+  player, static `+0x1CA` object/foreground redraw, then actor slots from index
+  2 upward.
+- Static runtime cell words `+0x1C6` and `+0x1C8` are the base/background parts.
+  The separate far-call target `d93:2530` (linear `0xFE60`) reads only
+  `+0x1CA` and redraws it as the static object/foreground pass.
+- Source FG/BG does not decide player occlusion.  Normal BG codes can render in
+  front when their EXE-derived write has nonzero `cA`; raw `0xEB` is the current
+  anchor example (`cA=0x02FC`).
+- `*` rows use the setter's nonzero-marker branch at `0x1059E`: they write only
+  the `+0x1CA` overlay visual word and skip collision-byte writes.
 
 ## Superseded Assumptions
 
@@ -249,8 +260,8 @@ Do not reintroduce these:
 - "World map is just platform level 0."  It is a separate top-down mode.
 - "Non-empty code means solid."  Collision comes from EXE runtime cell writes.
 - "BG/FG decides collision or draw order in a simple engine-layer sense."  The
-  `*` row branch writes overlay visual data but does not directly write collision
-  flags.
+  real static foreground rule is the hardcoded `+0x1CA` object redraw path; `*`
+  rows only feed that path through the setter's overlay branch.
 - "Use `TILE_MAP` visual footprint for collision."  Composite collision is
   emitted by parser setter calls and can differ from the rendered footprint.
 - "Raw `0x70` is foot-solid in current mission maps."  That was from the wrong
@@ -269,5 +280,7 @@ Do not reintroduce these:
 3. Exact remaining actor state branches for non-guard enemies and special traps.
 4. Projectile collision side effects beyond currently implemented hit/impact
    families.
-5. Player damage, lives, death, respawn and episode progression.
-6. Sound transform and playback semantics.
+5. Runtime-cell visual renderer based on generated `c6/c8/cA` writes instead of
+   editor `TILE_MAP` draw refs.
+6. Player damage, lives, death, respawn and episode progression.
+7. Sound transform and playback semantics.

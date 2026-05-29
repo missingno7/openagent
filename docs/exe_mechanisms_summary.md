@@ -62,6 +62,7 @@ runtime table before assigning raw-code pickup behavior.
 | 30 | Raw `0x63` is a ceiling laser crawler; raw `0xA7` is dynamic pushable barrel. |
 | 31 | Ceiling laser firing gate, barrel blocked-push behavior, beam core visuals and shark swimmer were refined. |
 | 32 | Shark direction uses bank 4's built-in left/right frames; barrel anti-stick behavior is backed by a dedicated actor overlap path. |
+| 33 | Runtime draw order corrected: the EXE draws the player before actor slots, so dynamic actors render over the player. |
 
 Current rule: any raw byte present in the special actor table should be treated
 as a candidate runtime actor first.  Bake it into static background only after
@@ -76,6 +77,9 @@ proving the EXE does not allocate/update an actor slot for it.
 | 19 | Superseded: it treated background groups as animated. |
 | 20 | Correction: `0x35..0x37` are static background variants.  Real animated tile found: raw `0x60` / visual `0x01F3` / bank 4 tile 48 toggles with bank 4 tile 0. |
 | 23 | Animation timing for raw `0x60` currently uses a 4-DOS-tick fallback until the exact `DS:6840` schedule is mapped. |
+| 33 | Normal/full static runtime cell words draw in `+0x1C6`, `+0x1C8`, `+0x1CA` order before the player; these words are layer order inside the cell, not by themselves player occlusion flags. |
+| 34 | Partially superseded by pass 35: `*` rows use the setter's nonzero-marker branch at `0x1059E`, write only the `+0x1CA` overlay word, and do not write collision bytes. |
+| 35 | Foreground is the hardcoded `+0x1CA` object redraw path (`d93:2530` / linear `0xFE60`), not source FG/BG.  Normal BG codes such as raw `0xEB` can render over the player because they write nonzero `cA` (`0x02FC`). |
 
 Current rule: separate static level bitmap, runtime actors and true renderer
 special cases.  Do not animate whole background groups just because adjacent
