@@ -28,6 +28,7 @@ Implemented runtime behaviour:
 
 - player can stand on it as a floor support,
 - player can push it horizontally one DOS pixel at a time,
+- it can fall when pushed off an edge,
 - when the barrel reaches a wall/end and cannot be pushed further, it turns around and does not trap the player in a solid collision,
 - it is drawn dynamically at its current position.
 

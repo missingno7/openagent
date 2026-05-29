@@ -22,6 +22,8 @@ This explains the in-game behaviour where pushing the barrel into a wall does no
 Runtime changes:
 
 - When a barrel push succeeds, it still moves by the player step.
+- When that horizontal move leaves it without floor support, it continues as a
+  dynamic actor and falls; it is not pinned to the old map row.
 - When a barrel push fails because it is against a wall/solid cell, it is turned away and nudged back if possible.
 - The player's collision with that same barrel is temporarily ignored until the overlap clears, instead of being re-enabled after a single pixel.  This fixes the previous “barrel sticks to player” feel.
 

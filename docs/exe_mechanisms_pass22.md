@@ -48,11 +48,12 @@ with a 3 DOS-tick frame period.
 The previous runtime treated raw `0x6E` as an 8-frame two-direction actor:
 `32..35` and `36..39`. The special actor table says `0x6E` is one actor record
 with object id `0x0085`, step `2 px/tick`, behaviour `0x26`, and timer
-`random(0x14)+0x1E`. The bank layout shows that tiles `36..39` are a different
-blue actor family, not the opposite direction of `0x6E`.
+`random(0x14)+0x1E`. State `0x26` later spawns object `0x89` at `x,y+16`;
+that object uses state `0x28` and the bank 2 `36..39` lightning frames below
+the flyer.  These frames are not the opposite direction of `0x6E`.
 
 The runtime now uses only bank 2 tiles `32..35` for `0x6E` and mirrors the tile
-when the actor moves left.
+when the actor moves left.  The lightning is a separate timed actor.
 
 ## Raw `0x7F`: bank 5 tiles `8..11`
 

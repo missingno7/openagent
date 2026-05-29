@@ -99,6 +99,8 @@ class PushableBarrel:
     y: float
     code: int = PUSHABLE_BARREL_CODE
     direction: int = 1
+    grounded: bool = False
+    fall_ticks: int = 0
 
     @property
     def left(self) -> int:
@@ -227,6 +229,13 @@ class Projectile:
     dy_px: int = 0
     anim_tiles: tuple[int, ...] | None = None
     frame_counter: int = 0
+    owner: str = "enemy"
+    impact_ticks: int = 0
+    life_ticks: int = 0
+
+    @property
+    def is_impact(self) -> bool:
+        return self.impact_ticks > 0
 
 
 @dataclass
@@ -363,6 +372,11 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                 )
                 continue
             direction = deterministic_direction(cell.code, cell.x, cell.y) if actor_model and actor_model.random_initial_direction else (-1 if cell.code in {0x76} else 1)
+            shoot_interval = (
+                deterministic_range(cell.code, cell.x, cell.y, actor_model.timer_min or 30, actor_model.timer_max or 49, salt=4)
+                if actor_model and cell.code in {0x63, 0x6E}
+                else 0
+            )
             enemies.append(
                 Enemy(
                     float(cell.x * TILE),
@@ -370,9 +384,14 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     code=cell.code,
                     direction=direction,
                     step_px=WALKER_STEP_BY_CODE.get(cell.code, 1),
-                    shoot_interval_ticks=(deterministic_range(cell.code, cell.x, cell.y, actor_model.timer_min or 30, actor_model.timer_max or 49, salt=4) if actor_model and cell.code == 0x63 else 0),
-                    shoot_timer_ticks=(deterministic_range(cell.code, cell.x, cell.y, actor_model.timer_min or 30, actor_model.timer_max or 49, salt=4) if actor_model and cell.code == 0x63 else 0),
-                    kind=("ceiling_laser" if cell.code == 0x63 else "walker"),
+                    shoot_interval_ticks=shoot_interval,
+                    shoot_timer_ticks=shoot_interval,
+                    alert_ticks=(
+                        deterministic_range(cell.code, cell.x, cell.y, 100, 149, salt=5)
+                        if cell.code == 0x6E
+                        else 0
+                    ),
+                    kind=("ceiling_laser" if cell.code == 0x63 else "lightning_flyer" if cell.code == 0x6E else "walker"),
                     behavior_state=actor_model.behavior_state if actor_model else 0,
                     object_id=actor_model.object_id if actor_model else 0,
                     hp=(

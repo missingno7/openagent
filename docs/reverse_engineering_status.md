@@ -278,9 +278,9 @@ Do not reintroduce these:
 2. Full `+0x1CA` interaction dispatcher: doors, exits, teleporters, toggles and
    special pickups.
 3. Exact remaining actor state branches for non-guard enemies and special traps.
-4. Projectile collision side effects beyond currently implemented hit/impact
-   families.
+4. Remaining object-specific projectile hit branches beyond the known
+   object-id damage and indestructible actor filters.
 5. Runtime-cell visual renderer based on generated `c6/c8/cA` writes instead of
    editor `TILE_MAP` draw refs.
 6. Player damage, lives, death, respawn and episode progression.
-7. Sound transform and playback semantics.
+7. Remaining sound ID names and exact `0x287e` priority/preemption semantics.

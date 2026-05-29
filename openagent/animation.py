@@ -63,10 +63,9 @@ WALKER_ANIMATIONS: dict[int, WalkerAnimation] = {
     # start frames. Treat both as horizontal walkers once extracted to runtime.
     0x75: WalkerAnimation(2, (8, 9, 10, 11), (12, 13, 14, 15)),
     0x76: WalkerAnimation(2, (8, 9, 10, 11), (12, 13, 14, 15)),
-    # 0x6E maps to object id 0x0085 / bank 2 tile 32.  The EXE special actor
-    # table treats it as one 4-frame actor family; bank 2 tiles 36..39 are a
-    # different blue enemy family, not the left-facing half of 0x6E.  Use the
-    # same four frames and mirror the tile in the renderer for left motion.
+    # 0x6E maps to object id 0x0085 / bank 2 tile 32.  Its state 0x26 later
+    # spawns a separate object 0x89 lightning actor that uses bank 2 tiles
+    # 36..39 below it; those are not the left-facing half of the flyer.
     0x6E: WalkerAnimation(2, (32, 33, 34, 35), (32, 33, 34, 35)),
     # raw 0x7F -> object id 0x0261 -> bank 5 tile 8 family; behaviour state 6,
     # step 2 px/tick, timer period 2.  It is another small 4-frame walker.

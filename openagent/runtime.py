@@ -75,6 +75,15 @@ from .semantics import (
     STATIONARY_SHOOTER_CODES,
     PUSHABLE_BARREL_CODE,
 )
+from .sound import (
+    SOUND_ENEMY_DEATH,
+    SOUND_FIRE,
+    SOUND_HURT,
+    SOUND_NO_AMMO,
+    SOUND_PICKUP,
+    SOUND_SCORE_1000,
+    SoundPlayer,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 ensure_editor_importable(ROOT)
@@ -177,6 +186,7 @@ class OpenAgentApp:
         self.anim_ticks = 0
         self._level_image_phase: int | None = None
         self.last_tick = time.perf_counter()
+        self.sound = SoundPlayer.from_campaign(campaign, self.episode_number)
 
         self.root = tk.Tk()
         self.root.title("OpenAgent")
@@ -215,8 +225,12 @@ class OpenAgentApp:
         self.root.mainloop()
 
     def close(self) -> None:
+        self.sound.close()
         self.campaign.cleanup()
         self.root.destroy()
+
+    def play_sound(self, sound_id: int) -> None:
+        self.sound.play(sound_id)
 
     def on_key_press(self, event: tk.Event) -> None:
         key = event.keysym
@@ -279,6 +293,7 @@ class OpenAgentApp:
     def change_episode(self, delta: int) -> None:
         self.episode_index = (self.episode_index + delta) % len(self.episode_numbers)
         self.level_index = min(self.level_index, self.level_count - 1)
+        self.sound.load_episode(self.campaign, self.episode_number)
         self.load_level(reset_player=True)
 
     def change_level(self, delta: int) -> None:
@@ -645,12 +660,15 @@ class OpenAgentApp:
                 continue
             enemy.frame_counter = actor_walk_counter_next(enemy.frame_counter, direction=enemy.direction)
             old_x = enemy.x
-            enemy.x += enemy.direction * enemy.step_px
+            if enemy.kind != "lightning_flyer" or enemy.alert_ticks <= 0:
+                enemy.x += enemy.direction * enemy.step_px
             if enemy.kind == "ceiling_laser":
                 blocked = self.enemy_collides(enemy) or not self.enemy_has_ceiling_ahead(enemy)
             elif enemy.kind == "swimmer":
                 # Shark/water swimmers use the same actor counter, but do not
                 # need a floor probe. They reverse on body collision/level edge.
+                blocked = self.enemy_collides(enemy) or enemy.x < 0 or enemy.x + TILE > LEVEL_W * TILE
+            elif enemy.kind == "lightning_flyer":
                 blocked = self.enemy_collides(enemy) or enemy.x < 0 or enemy.x + TILE > LEVEL_W * TILE
             else:
                 blocked = self.enemy_collides(enemy) or not self.enemy_has_floor_ahead(enemy)
@@ -658,6 +676,16 @@ class OpenAgentApp:
                 enemy.x = old_x
                 enemy.direction *= -1
                 enemy.frame_counter = actor_walk_counter_next(0, direction=enemy.direction)
+            if enemy.kind == "lightning_flyer":
+                if enemy.alert_ticks > 0:
+                    enemy.alert_ticks -= 1
+                    continue
+                enemy.shoot_timer_ticks += 1
+                if enemy.shoot_interval_ticks and enemy.shoot_timer_ticks >= enemy.shoot_interval_ticks:
+                    enemy.shoot_timer_ticks = 0
+                    enemy.alert_ticks = 0x6E
+                    self.spawn_lightning_bolt(enemy)
+                continue
             if enemy.alert_ticks > 0:
                 enemy.alert_ticks -= 1
             if enemy.can_shoot:
@@ -673,6 +701,7 @@ class OpenAgentApp:
                     # back-turned guards fire blindly every period.
                     enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, enemy.shoot_interval_ticks)
 
+        self.update_barrels_tick()
         self.update_projectiles_tick()
 
         kept_explosions: list[Explosion] = []
@@ -899,7 +928,7 @@ class OpenAgentApp:
 
     def try_fire_projectile(self) -> bool:
         p = self.player
-        if p.fire_cooldown > 0:
+        if self.player_projectile_active():
             return False
         # The EXE fire-key branch checks DS:6EC1/69F5 and skips shot creation
         # while the jump routine is active.  It also exits before changing
@@ -909,13 +938,21 @@ class OpenAgentApp:
             return False
         if self.ammo <= 0:
             p.fire_cooldown = 0.18
+            self.play_sound(SOUND_NO_AMMO)
             return False
         self.ammo -= 1
-        p.fire_cooldown = 0.22
         start_x = p.x + (PLAYER_W - 1 if p.facing > 0 else -2)
         start_y = p.y + 7
-        self.entities.projectiles.append(Projectile(start_x, start_y, p.facing, speed=4 * DOS_TICK_HZ, hostile=False, bank=1, tile_right=38, tile_left=39))
+        self.entities.projectiles.append(Projectile(start_x, start_y, p.facing, speed=4 * DOS_TICK_HZ, hostile=False, bank=1, tile_right=38, tile_left=39, owner="player"))
+        self.play_sound(SOUND_FIRE)
         return True
+
+    def player_projectile_active(self) -> bool:
+        # The EXE helper 0x5784 allocates a real actor slot for the player's
+        # bullet (state 0x07/object 0x27).  Impact rewrites that same slot to
+        # state 0x1388/object 0x187, so the player cannot fire again until the
+        # impact actor has finished too.
+        return any(shot.owner == "player" for shot in self.entities.projectiles)
 
     def active_camera(self) -> tuple[int, int]:
         p = self.player
@@ -993,6 +1030,7 @@ class OpenAgentApp:
                     dx_px=0,
                     dy_px=4,
                     anim_tiles=CEILING_LASER_PROJECTILE_TILES,
+                    owner="enemy",
                 )
             )
             return
@@ -1004,7 +1042,7 @@ class OpenAgentApp:
             start_x = enemy.x + STATIONARY_SHOOTER_SPAWN_X_OFFSET.get(enemy.code, TILE - 2 if enemy.direction > 0 else -2)
             start_y = enemy.y + 8
             self.entities.projectiles.append(
-                Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=bank, tile_right=tile_right, tile_left=tile_left)
+                Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=bank, tile_right=tile_right, tile_left=tile_left, owner="enemy")
             )
             return
         # Bank-14 shooter guards and the player share projectile helper 0x5784
@@ -1012,13 +1050,46 @@ class OpenAgentApp:
         # displayed here as bank 1 tiles 38/39, speed=4 px/tick.
         start_x = enemy.x + (TILE - 2 if enemy.direction > 0 else -2)
         start_y = enemy.y + 8
-        self.entities.projectiles.append(Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=1, tile_right=38, tile_left=39))
+        self.entities.projectiles.append(Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=1, tile_right=38, tile_left=39, owner="enemy"))
+        self.play_sound(SOUND_FIRE)
+
+    def spawn_lightning_bolt(self, enemy) -> None:
+        # Raw 0x6E / state 0x26 calls projectile helper 0x5784 with object
+        # 0x0089 at (actor_x, actor_y + 16).  Helper maps object 0x89 to state
+        # 0x28 and initializes DS:34DA=0x1E; the state animates in place until
+        # the timer expires.
+        self.entities.projectiles.append(
+            Projectile(
+                enemy.x,
+                enemy.y + TILE,
+                0,
+                hostile=True,
+                bank=2,
+                tile_right=36,
+                tile_left=36,
+                dx_px=0,
+                dy_px=0,
+                anim_tiles=(36, 37, 38, 39),
+                owner="enemy",
+                life_ticks=0x1E,
+            )
+        )
+        self.play_sound(SOUND_FIRE)
 
     def spawn_projectile_explosion(self, x: float, y: float) -> None:
         # Impact branch near SAM1:0x4F15 and enemy hit branch near 0x5C59 turns
         # the projectile actor into the short hit spark.  The visible decoded
         # sprite family is bank 5 tiles 24..27, not the unrelated bank-6 frames.
         self.entities.explosions.append(Explosion(float(x - 8), float(y - 8)))
+
+    def begin_projectile_impact(self, shot: Projectile) -> None:
+        # SAM1:0x5C59 rewrites the projectile slot to state 0x1388, object
+        # 0x0187, speed 0.  Keep it in projectiles so the owning shot slot stays
+        # occupied until the visible impact frames complete.
+        shot.impact_ticks = 12
+        shot.dx_px = 0
+        shot.dy_px = 0
+        shot.frame_counter = 0
 
     def actor_rect(self, enemy: Enemy) -> tuple[float, float, float, float]:
         width = TILE * 2 if enemy.code in {0xAE, 0x24, 0x56, 0x58} else TILE
@@ -1048,26 +1119,45 @@ class OpenAgentApp:
         kept: list[Projectile] = []
         for shot in self.entities.projectiles:
             shot.frame_counter += 1
+            if shot.is_impact:
+                shot.impact_ticks -= 1
+                if shot.impact_ticks > 0:
+                    kept.append(shot)
+                continue
+            if shot.life_ticks > 0:
+                shot.life_ticks -= 1
+                if shot.hostile and self.hurt_flash <= 0 and self.projectile_hits_player_rect(shot.x, shot.y, TILE, TILE):
+                    self.hurt_flash = 0.75
+                    self.play_sound(SOUND_HURT)
+                if shot.life_ticks > 0:
+                    kept.append(shot)
+                continue
+            old_x, old_y = shot.x, shot.y
             shot.x += shot.dx_px if shot.dx_px is not None else shot.direction * 4
             shot.y += shot.dy_px
+            if not self.projectile_in_active_viewport(shot):
+                continue
             tile_x = int(shot.x) // TILE
             tile_y = int(shot.y) // TILE
             if tile_x < 0 or tile_y < 0 or tile_x >= LEVEL_W or tile_y >= LEVEL_H:
                 continue
             if self.cell_blocks_body(tile_x, tile_y):
-                self.spawn_projectile_explosion(shot.x, shot.y)
+                self.begin_projectile_impact(shot)
+                kept.append(shot)
                 continue
             if shot.hostile:
-                if self.projectile_hits_player(shot):
+                if self.projectile_hits_player(shot, old_x, old_y):
                     self.hurt_flash = 0.75
-                    self.spawn_projectile_explosion(shot.x, shot.y)
+                    self.play_sound(SOUND_HURT)
+                    self.begin_projectile_impact(shot)
+                    kept.append(shot)
                     continue
                 kept.append(shot)
                 continue
             blocked_by_actor = None
             hit = None
             for enemy in self.entities.enemies:
-                if self.actor_contains_point(enemy, shot.x, shot.y):
+                if self.projectile_crosses_actor(shot, enemy, old_x, old_y):
                     if self.enemy_is_shootable(enemy):
                         hit = enemy
                         break
@@ -1076,17 +1166,57 @@ class OpenAgentApp:
                         break
             if hit is not None:
                 self.hit_enemy_with_projectile(hit, shot)
-                self.spawn_projectile_explosion(shot.x, shot.y)
+                self.begin_projectile_impact(shot)
+                kept.append(shot)
                 continue
             if blocked_by_actor is not None:
-                self.spawn_projectile_explosion(shot.x, shot.y)
+                self.begin_projectile_impact(shot)
+                kept.append(shot)
                 continue
             kept.append(shot)
         self.entities.projectiles = kept
 
-    def projectile_hits_player(self, shot: Projectile) -> bool:
+    def projectile_hits_player(self, shot: Projectile, old_x: float | None = None, old_y: float | None = None) -> bool:
         p = self.player
-        return p.x <= shot.x <= p.x + PLAYER_W - 1 and p.y <= shot.y <= p.y + PLAYER_H - 1
+        return self.segment_hits_rect(
+            old_x if old_x is not None else shot.x,
+            old_y if old_y is not None else shot.y,
+            shot.x,
+            shot.y,
+            p.x,
+            p.y,
+            p.x + PLAYER_W - 1,
+            p.y + PLAYER_H - 1,
+        )
+
+    def projectile_hits_player_rect(self, x: float, y: float, w: int, h: int) -> bool:
+        p = self.player
+        return not (
+            p.x + PLAYER_W - 1 < x
+            or p.x > x + w - 1
+            or p.y + PLAYER_H - 1 < y
+            or p.y > y + h - 1
+        )
+
+    def projectile_crosses_actor(self, shot: Projectile, enemy: Enemy, old_x: float, old_y: float) -> bool:
+        left, top, right, bottom = self.actor_rect(enemy)
+        return self.segment_hits_rect(old_x, old_y, shot.x, shot.y, left, top, right, bottom)
+
+    def projectile_in_active_viewport(self, shot: Projectile) -> bool:
+        # Projectile actors are culled by the fixed DOS gameplay viewport, not
+        # the whole level and not the resized editor window.  Use a small sprite
+        # footprint so a bullet disappears only once it has fully left view.
+        return self.rect_in_active_viewport(shot.x - 8, shot.y - 8, 16, 16)
+
+    def segment_hits_rect(self, x1: float, y1: float, x2: float, y2: float, left: float, top: float, right: float, bottom: float) -> bool:
+        steps = max(1, int(max(abs(x2 - x1), abs(y2 - y1))))
+        for i in range(steps + 1):
+            t = i / steps
+            x = x1 + (x2 - x1) * t
+            y = y1 + (y2 - y1) * t
+            if left <= x <= right and top <= y <= bottom:
+                return True
+        return False
 
     def spawn_score_popup(self, x: float, y: float, value: int, *, preferred_tile: int | None = None) -> None:
         popup_tile = preferred_tile if preferred_tile is not None else score_popup_tile_for_value(value)
@@ -1102,6 +1232,7 @@ class OpenAgentApp:
             self.entities.enemies.remove(enemy)
             self.score += BANK14_RIP_SHOT_SCORE
             self.spawn_score_popup(enemy.x, enemy.y, BANK14_RIP_SHOT_SCORE)
+            self.play_sound(SOUND_ENEMY_DEATH)
             return
         if enemy.bank == 14 and enemy.base_tile is not None:
             hit_from_back = shot is not None and self.bank14_shot_hits_back(enemy, shot)
@@ -1130,6 +1261,7 @@ class OpenAgentApp:
                     enemy.shoot_interval_ticks = 0
                     enemy.shoot_timer_ticks = 0
                 enemy.frame_counter = actor_walk_counter_next(0, direction=enemy.direction)
+                self.play_sound(SOUND_HURT)
                 return
 
             enemy.kind = "rip"
@@ -1138,16 +1270,19 @@ class OpenAgentApp:
             enemy.shoot_interval_ticks = 0
             enemy.shoot_timer_ticks = 0
             enemy.frame_counter = 0
+            self.play_sound(SOUND_ENEMY_DEATH)
             return
         if enemy.hp > 1:
             enemy.hp -= 1
             enemy.alert_ticks = 8
             if shot is not None:
                 enemy.direction = -1 if shot.x > enemy.x else 1
+            self.play_sound(SOUND_HURT)
             return
         self.entities.enemies.remove(enemy)
         self.score += 100
         self.spawn_score_popup(enemy.x, enemy.y, 100)
+        self.play_sound(SOUND_ENEMY_DEATH)
 
     def enemy_collides(self, enemy) -> bool:
         l, t, r, b = self.actor_rect(enemy)
@@ -1188,6 +1323,60 @@ class OpenAgentApp:
                 if self.cell_solid(x, y):
                     return True
         return False
+
+    def update_barrels_tick(self) -> None:
+        for barrel in self.entities.barrels:
+            carry_player = self.barrel_below() is barrel and self.player.grounded
+            landing_y = self.barrel_landing_y(barrel, barrel.y + TILE, barrel.y + TILE + 1)
+            if landing_y is not None and landing_y >= barrel.y and abs(barrel.y - landing_y) <= 1.0:
+                barrel.y = landing_y
+                barrel.grounded = True
+                barrel.fall_ticks = 0
+                continue
+            barrel.grounded = False
+            barrel.fall_ticks = min(FALL_COUNTER_MAX, barrel.fall_ticks + 1)
+            fall_step = PLAYER_VERTICAL_STEP_TABLE[barrel.fall_ticks]
+            moved = self.move_barrel_vertical(barrel, fall_step)
+            if carry_player and moved:
+                self.player.y += moved
+                self.player.grounded = True
+
+    def move_barrel_vertical(self, barrel: PushableBarrel, dy: int) -> int:
+        moved = 0
+        for _ in range(max(0, int(dy))):
+            prev_bottom = barrel.y + TILE
+            new_bottom = prev_bottom + 1
+            landing_y = self.barrel_landing_y(barrel, prev_bottom, new_bottom)
+            if landing_y is not None and landing_y >= barrel.y:
+                barrel.y = landing_y
+                barrel.grounded = True
+                barrel.fall_ticks = 0
+                return moved
+            old_y = barrel.y
+            barrel.y += 1
+            if self.barrel_collides(barrel):
+                barrel.y = old_y
+                barrel.grounded = True
+                barrel.fall_ticks = 0
+                return moved
+            moved += 1
+        return moved
+
+    def barrel_landing_y(self, barrel: PushableBarrel, prev_bottom: float, new_bottom: float) -> float | None:
+        candidates: list[float] = []
+        for sample_x in (int(barrel.x + 3), int(barrel.x + 12)):
+            tile_x = sample_x // TILE
+            tile_y = int(new_bottom) // TILE
+            if self.cell_blocks_floor(tile_x, tile_y, prev_bottom=prev_bottom, new_bottom=new_bottom):
+                candidates.append(float(tile_y * TILE - TILE))
+        for other in self.entities.barrels:
+            if other is barrel:
+                continue
+            horizontal = barrel.x + TILE - 1 >= other.x + 2 and barrel.x <= other.x + TILE - 3
+            vertical = other.y <= new_bottom <= other.y + 4 and prev_bottom <= other.y + 1
+            if horizontal and vertical:
+                candidates.append(float(other.y - TILE))
+        return min(candidates) if candidates else None
 
     def platform_below(self) -> MovingPlatform | None:
         p = self.player
@@ -1319,10 +1508,13 @@ class OpenAgentApp:
                 changed = True
                 if kind == "key":
                     self.owned_keys.add(cell.code)
+                    self.play_sound(SOUND_PICKUP)
                 elif kind == "ammo":
                     self.ammo += 5
+                    self.play_sound(SOUND_PICKUP)
                 elif (score_value := score_value_for_code(cell.code)) is not None:
                     self.score += score_value
+                    self.play_sound(SOUND_SCORE_1000 if score_value >= 1000 else SOUND_PICKUP)
                     popup_tile = score_popup_tile_for_value(score_value)
                     if popup_tile is not None:
                         self.entities.score_popups.append(
@@ -1330,9 +1522,11 @@ class OpenAgentApp:
                         )
                 elif kind == "glasses":
                     self.has_glasses = True
+                    self.play_sound(SOUND_PICKUP)
             elif is_door_code(cell.code) and door_unlocked_by(cell.code) in self.owned_keys:
                 self.opened_doors.add(key)
                 self.owned_keys.discard(door_unlocked_by(cell.code))
+                self.play_sound(SOUND_SCORE_1000)
                 changed = True
         if changed:
             self.rebuild_level_image()
@@ -1347,6 +1541,7 @@ class OpenAgentApp:
             if enemy.is_rip and not (right < enemy.x or left > enemy.x + TILE - 1 or bottom < enemy.y or top > enemy.y + TILE - 1):
                 self.score += BANK14_RIP_PICKUP_SCORE
                 self.spawn_score_popup(enemy.x, enemy.y, BANK14_RIP_PICKUP_SCORE)
+                self.play_sound(SOUND_PICKUP)
                 continue
             kept.append(enemy)
         self.entities.enemies = kept
@@ -1368,6 +1563,7 @@ class OpenAgentApp:
             if bottom < sy + 2 or top > sy + TILE - 3:
                 continue
             self.hurt_flash = 0.75
+            self.play_sound(SOUND_HURT)
             self.player.jump_anim_timer = 0
             self.player.grounded = False
             break
@@ -1389,6 +1585,7 @@ class OpenAgentApp:
                 if right < bx1 or left > bx2 or bottom < by1 or top > by2:
                     continue
                 self.hurt_flash = 0.75
+                self.play_sound(SOUND_HURT)
                 self.player.jump_anim_timer = 0
                 self.player.grounded = False
                 return
@@ -1428,6 +1625,7 @@ class OpenAgentApp:
             if bottom < enemy.y or top > enemy.y + TILE - 1:
                 continue
             self.hurt_flash = 0.75
+            self.play_sound(SOUND_HURT)
             # Placeholder for lives/health until the EXE damage routine is mapped.
             # Give immediate visual/physical feedback without ending the level.
             self.player.jump_anim_timer = 0
@@ -1578,13 +1776,21 @@ class OpenAgentApp:
         for shot in self.entities.projectiles:
             x = int(shot.x - cam_x)
             y = int(shot.y - cam_y)
+            if shot.is_impact:
+                boom_frames = (24, 25, 26, 27)
+                impact_frame = min(len(boom_frames) - 1, shot.frame_counter // 3)
+                tile = self.episode.tiles16.get(5, boom_frames[impact_frame])
+                if tile:
+                    frame.alpha_composite(tile, (x - 8, y - 8))
+                continue
             if shot.anim_tiles:
                 tile_no = shot.anim_tiles[(shot.frame_counter // 2) % len(shot.anim_tiles)]
             else:
                 tile_no = shot.tile_right if shot.direction >= 0 else shot.tile_left
             tile = self.episode.tiles16.get(shot.bank, tile_no)
             if tile:
-                frame.alpha_composite(tile, (x, y - 7))
+                draw_y = y if shot.life_ticks > 0 else y - 7
+                frame.alpha_composite(tile, (x, draw_y))
             else:
                 fill = (255, 96, 80, 255) if shot.hostile else (255, 255, 96, 255)
                 draw.rectangle([x, y, x + 3, y + 1], fill=fill)

@@ -84,10 +84,11 @@ Crystal Caves naming differs:
    - replace remaining state/speed/timer fallbacks with exact actor dispatcher
      branches;
    - keep dynamic actor markers out of the static background render.
-4. Prove the `.SND` transform:
-   - locate the sound file open/read path for `SAM101E.SND` etc.;
-   - compare read buffer post-processing against OCC `Sound` records;
-   - produce decoded WAV/RAW previews once the transform is known.
+4. Continue the sound pass:
+   - the `.SND` transform is now proven as normal Secret Agent bit-reverse/XOR;
+   - keep naming sound IDs from `lcall $0x287e,$0x0` call sites;
+   - compare synthesized WAVs against DOSBox capture and recover priority
+     handling from the playback routine.
 5. Decide final engine substrate:
    - keep the Python prototype as a fast RE harness;
    - port proven behavior into a C++/SDL OpenCrystalCaves-style runtime once the

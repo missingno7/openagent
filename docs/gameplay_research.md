@@ -121,4 +121,5 @@ source for Secret Agent-specific map codes, collision, actors or pickup logic.
 3. Exact update branches for special actors that are currently represented by
    table-derived object id/speed/timer models.
 4. Player damage, lives, death/respawn and level completion.
-5. Sound file transform and playback behavior.
+5. Remaining sound ID naming and priority/preemption behavior inside the
+   original `0x287e` playback routine.

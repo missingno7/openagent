@@ -62,6 +62,10 @@ runtime table before assigning raw-code pickup behavior.
 | 30 | Raw `0x63` is a ceiling laser crawler; raw `0xA7` is dynamic pushable barrel. |
 | 31 | Ceiling laser firing gate, barrel blocked-push behavior, beam core visuals and shark swimmer were refined. |
 | 32 | Shark direction uses bank 4's built-in left/right frames; barrel anti-stick behavior is backed by a dedicated actor overlap path. |
+| 37 | Pushable barrel is dynamic under gravity and can fall after being pushed off an edge. |
+| 38 | Player projectile firing is slot-based; impact state keeps the shot active, and bullet hits use object-id filtering plus swept contact. |
+| 39 | Moving projectiles are removed when they fully leave the fixed 320x200 active gameplay viewport. |
+| 40 | Raw `0x6E` is a state `0x26` lightning flyer: it pauses, spawns object `0x89` below itself, and that state `0x28` actor animates bank2 `36..39`. |
 | 33 | Runtime draw order corrected: the EXE draws the player before actor slots, so dynamic actors render over the player. |
 
 Current rule: any raw byte present in the special actor table should be treated
