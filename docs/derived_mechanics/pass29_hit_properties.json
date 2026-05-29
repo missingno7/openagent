@@ -1,0 +1,218 @@
+{
+  "evidence": {
+    "hit_dispatcher": "SAM1 0x4BD2..0x4ED5 branches on actor object id DS:34E0",
+    "projectile_impact": "SAM1 0x4F15 and 0x5C59 convert projectile slot to impact/boom state",
+    "stationary_shooters": "object ids 0x01D0/0x01D1/0x01E7/0x01EB are not in the decoded shot-damage branches",
+    "impact_sprite": "decoded visible impact family is bank 5 tiles 24..27"
+  },
+  "shootable_object_ids": [
+    "0x0065",
+    "0x0072",
+    "0x0353",
+    "0x1389"
+  ],
+  "shootable_object_id_ranges": [
+    [
+      "0x0321",
+      "0x0383"
+    ]
+  ],
+  "actors": [
+    {
+      "raw_code": "0x23",
+      "object_id": "0x0097",
+      "state": "0x20",
+      "kind": "actor",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x24",
+      "object_id": "0x0065",
+      "state": "0x27",
+      "kind": "actor",
+      "shot_damage_class": "shootable_object_branch",
+      "hp_hint": 3,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x30",
+      "object_id": "0x016F",
+      "state": "0x03",
+      "kind": "bank14_guard",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x38",
+      "object_id": "0x015F",
+      "state": "0x01",
+      "kind": "bank14_guard",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x39",
+      "object_id": "0x0167",
+      "state": "0x02",
+      "kind": "bank14_guard",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x3C",
+      "object_id": "0x01E7",
+      "state": "0x0C",
+      "kind": "stationary_shooter",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": 1,
+      "stationary_projectile": [
+        4,
+        37,
+        41
+      ]
+    },
+    {
+      "raw_code": "0x3D",
+      "object_id": "0x01EB",
+      "state": "0x0D",
+      "kind": "stationary_shooter",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": -1,
+      "stationary_projectile": [
+        4,
+        37,
+        41
+      ]
+    },
+    {
+      "raw_code": "0x47",
+      "object_id": "0x017F",
+      "state": "0x05",
+      "kind": "bank14_guard",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x51",
+      "object_id": "0x01D1",
+      "state": "0x0B",
+      "kind": "stationary_shooter",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": -1,
+      "stationary_projectile": [
+        4,
+        19,
+        19
+      ]
+    },
+    {
+      "raw_code": "0x52",
+      "object_id": "0x01D0",
+      "state": "0x0A",
+      "kind": "stationary_shooter",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": 1,
+      "stationary_projectile": [
+        4,
+        19,
+        19
+      ]
+    },
+    {
+      "raw_code": "0x56",
+      "object_id": "0x0321",
+      "state": "0x1E",
+      "kind": "actor",
+      "shot_damage_class": "shootable_range_branch",
+      "hp_hint": 3,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x58",
+      "object_id": "0x0331",
+      "state": "0x1F",
+      "kind": "actor",
+      "shot_damage_class": "shootable_range_branch",
+      "hp_hint": 3,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x63",
+      "object_id": "0x0345",
+      "state": "0x21",
+      "kind": "actor",
+      "shot_damage_class": "shootable_range_branch",
+      "hp_hint": 3,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x65",
+      "object_id": "0x0075",
+      "state": "0x22",
+      "kind": "actor",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": 3,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x67",
+      "object_id": "0x0177",
+      "state": "0x04",
+      "kind": "bank14_guard",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x6E",
+      "object_id": "0x0085",
+      "state": "0x26",
+      "kind": "actor",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": 3,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0x7F",
+      "object_id": "0x0261",
+      "state": "0x06",
+      "kind": "actor",
+      "shot_damage_class": "no_known_player_shot_damage_branch",
+      "hp_hint": null,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    },
+    {
+      "raw_code": "0xAE",
+      "object_id": "0x0353",
+      "state": "0x2A",
+      "kind": "actor",
+      "shot_damage_class": "shootable_object_branch",
+      "hp_hint": 3,
+      "stationary_direction": null,
+      "stationary_projectile": null
+    }
+  ]
+}

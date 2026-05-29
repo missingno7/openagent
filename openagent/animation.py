@@ -71,6 +71,22 @@ WALKER_ANIMATIONS: dict[int, WalkerAnimation] = {
     # raw 0x7F -> object id 0x0261 -> bank 5 tile 8 family; behaviour state 6,
     # step 2 px/tick, timer period 2.  It is another small 4-frame walker.
     0x7F: WalkerAnimation(5, (8, 9, 10, 11), (8, 9, 10, 11)),
+    # raw 0x5F -> bank 4 shark swimmer.  The decoded bank is directional,
+    # not mirrored: 46/47 swim right, 44/45 swim left.
+    0x5F: WalkerAnimation(4, (46, 47), (44, 45)),
+    # raw 0xAE -> object id 0x0353, bank 0 composite.  TILE_MAP shows the
+    # standing object as two side-by-side tiles (0,4).  The surrounding bank-0
+    # tiles are the animation phases in groups of four.
+    0xAE: WalkerAnimation(0, (0, 1, 2, 3), (0, 1, 2, 3)),
+    # raw 0x24 -> bank 2 two-high helmet enemy.  Base top/bottom refs are
+    # bank2 40 and 44; use 40..43 / 44..47 as synchronized lower-body frames.
+    0x24: WalkerAnimation(2, (40, 41, 42, 43), (40, 41, 42, 43)),
+    # Additional decoded special actors from the same table.
+    0x56: WalkerAnimation(12, (0, 1, 2, 3), (0, 1, 2, 3)),
+    0x58: WalkerAnimation(12, (31, 32, 33, 34), (31, 32, 33, 34)),
+    # raw 0x63 -> object id 0x0345 / state 0x21.  The visible bank-12
+    # family is 36..43: 36..39 for one horizontal direction, 40..43 for the other.
+    0x63: WalkerAnimation(12, (36, 37, 38, 39), (40, 41, 42, 43)),
 }
 
 
@@ -153,3 +169,44 @@ def bank14_guard_tile(base_tile: int, *, direction: int, frame_counter: int | No
         start = 0x15 if direction < 0 else 0x01
         index = max(0, (frame_counter - start) // 5) % len(frames)
     return (14, frames[index])
+
+
+def satellite_tile(frame_index: int) -> tuple[int, int]:
+    return (10, max(0, min(3, frame_index)))
+
+def actor_frame_index(frame_counter: int) -> int:
+    return max(0, min(3, (max(1, frame_counter) - 1) // 5))
+
+def multi_tile_actor_refs(code: int, direction: int, frame_counter: int) -> tuple[tuple[int, int, int, int], ...] | None:
+    """Return relx,rely,bank,tile refs for multi-cell EXE actors.
+
+    These are the first pass through the special actor table entries that were
+    already extracted but not rendered as runtime actors.  The key point is that
+    the raw map marker is skipped from the static layer and the visible sprite
+    is drawn from the actor object/frame state.
+    """
+    frame = actor_frame_index(frame_counter)
+    if code == 0xAE:
+        # Bank-0 two-wide creature.  When walking right the EXE draws the pair
+        # as (0,4), (1,5), (2,6), (3,7).  Facing left mirrors the whole
+        # two-tile composite, so the tile order must be swapped before the
+        # renderer flips each 16x16 cel; otherwise the head/body halves are
+        # visibly reversed.
+        if direction < 0:
+            return ((-1, 0, 0, 4 + frame), (0, 0, 0, frame))
+        return ((-1, 0, 0, frame), (0, 0, 0, 4 + frame))
+    if code == 0x24:
+        # Bank-2 helmet enemy is two tiles high.  Upper and lower halves animate
+        # together for now; the EXE state has room for the helmet opening branch
+        # and is documented as the next target.
+        return ((0, -1, 2, 40 + frame), (0, 0, 2, 44 + frame))
+    if code == 0x56:
+        return ((0, -1, 12, 0 + frame), (0, 0, 12, 4 + frame))
+    if code == 0x58:
+        return ((0, -1, 12, 31 + frame), (0, 0, 12, 35 + frame))
+    if code == 0x63:
+        # Ceiling laser crawler is a one-tile actor using bank12 36..43.
+        # It is handled by walker_tile(); do not draw it as a separate
+        # multi-tile composite.
+        return None
+    return None

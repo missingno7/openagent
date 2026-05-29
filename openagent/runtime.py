@@ -25,17 +25,27 @@ from .animation import (
     actor_walk_counter_next,
     walker_tile,
     bank14_guard_tile,
+    satellite_tile,
+    multi_tile_actor_refs,
 )
 from .collision import PLAYER_COLLISION_BOTTOM, PLAYER_DRAW_H, PLAYER_DRAW_W, player_body_probes
-from .entities import LevelEntities, MovingPlatform, Projectile, ScorePopup, extract_level_entities
+from .entities import BeamTrap, Explosion, LevelEntities, MovingPlatform, Projectile, ScorePopup, extract_level_entities, Enemy, PushableBarrel
 from .exe_actor_mechanics import (
     BANK14_GUARD_BEHAVIOUR_BY_BASE_TILE,
     BANK14_GUARD_SHOOT_TIMER_RANGE_BY_BASE_TILE,
     BANK14_GUARD_SPEED_BY_BASE_TILE,
     deterministic_range,
+    object_id_is_shootable,
     spike_frame_for_timer,
     spike_is_dangerous,
+    BEAM_CYCLE_TICKS,
+    beam_phase_for_timer,
+    beam_is_dangerous,
     SPIKE_CYCLE_TICKS,
+    STATIONARY_SHOOTER_PROJECTILE,
+    STATIONARY_SHOOTER_SPAWN_X_OFFSET,
+    CEILING_LASER_PROJECTILE_BANK,
+    CEILING_LASER_PROJECTILE_TILES,
 )
 from .level_model import build_runtime_collision_grid, cells_at, codes_at, iter_map_cells
 from .loader import Campaign, ensure_editor_importable, load_campaign
@@ -61,6 +71,8 @@ from .semantics import (
     mission_code_kind,
     score_popup_tile_for_value,
     score_value_for_code,
+    STATIONARY_SHOOTER_CODES,
+    PUSHABLE_BARREL_CODE,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,6 +84,8 @@ from secret_agent_editor.render import SecretAgentRenderer
 
 GAME_VIEW_W = 320
 GAME_VIEW_H = 200
+ACTIVE_VIEW_W = 320
+ACTIVE_VIEW_H = 200
 DEFAULT_ZOOM = 2
 MIN_ZOOM = 1
 MAX_ZOOM = 6
@@ -144,7 +158,9 @@ class OpenAgentApp:
         self.level_image: Image.Image | None = None
         self.level_photo: ImageTk.PhotoImage | None = None
         self.frame_photo: ImageTk.PhotoImage | None = None
-        self.entities = LevelEntities([], [], [], [], [])
+        self.entities = LevelEntities([], [], [], [], [], [], [], [], [])
+        self._ignore_barrel_collision: PushableBarrel | None = None
+        self._ignore_barrel_collision_ticks = 0
         self.collected_cells: set[tuple[int, int, int, str]] = set()
         self.opened_doors: set[tuple[int, int, int, str]] = set()
         self.owned_keys: set[int] = set()
@@ -268,7 +284,9 @@ class OpenAgentApp:
         self.load_level(reset_player=True)
 
     def load_level(self, *, reset_player: bool) -> None:
-        self.entities = LevelEntities([], [], [], [], []) if self.is_world_map else extract_level_entities(self.episode.levels[self.level_index])
+        self.entities = LevelEntities([], [], [], [], [], [], [], [], []) if self.is_world_map else extract_level_entities(self.episode.levels[self.level_index])
+        self._ignore_barrel_collision = None
+        self._ignore_barrel_collision_ticks = 0
         if reset_player and not self.is_world_map:
             self.collected_cells.clear()
             self.opened_doors.clear()
@@ -360,6 +378,8 @@ class OpenAgentApp:
         now = time.perf_counter()
         dt = min(now - self.last_tick, 1 / 20)
         self.last_tick = now
+        if not self.is_world_map:
+            self.update_barrel_overlap_state()
         if self.is_world_map:
             self.update_world_player(dt)
         else:
@@ -537,7 +557,8 @@ class OpenAgentApp:
             self._entity_accum -= 1.0 / DOS_TICK_HZ
             self.anim_ticks += 1
             self.update_entities_tick()
-        self.update_projectiles(dt)
+        # Projectile actors are normal EXE actor slots too. Advance them in
+        # the fixed actor tick loop, not continuously per Tk redraw frame.
 
     def update_entities_tick(self) -> None:
         dt = 1.0 / DOS_TICK_HZ
@@ -545,6 +566,15 @@ class OpenAgentApp:
             spike.timer_ticks += 1
             if spike.timer_ticks >= SPIKE_CYCLE_TICKS:
                 spike.timer_ticks = 0
+        for beam in self.entities.beam_traps:
+            beam.timer_ticks += 1
+            if beam.timer_ticks >= BEAM_CYCLE_TICKS:
+                beam.timer_ticks = 0
+        for satellite in self.entities.satellites:
+            satellite.timer_ticks += 1
+            if satellite.timer_ticks >= satellite.period_ticks:
+                satellite.timer_ticks = 0
+                satellite.frame_index = (satellite.frame_index + 1) % 4
         for platform in self.entities.platforms:
             carry_player = self.platform_below() is platform and self.player.grounded
             old_x = platform.x
@@ -561,10 +591,32 @@ class OpenAgentApp:
             enemy.anim_time += dt
             if enemy.is_rip:
                 continue
+            if enemy.kind == "stationary_shooter":
+                # EXE states 0x0A..0x0D do not walk.  They increment DS:34DA,
+                # compare it to DS:34D8, then check same tile row and whether
+                # the player is in front before calling projectile helper 0x5784.
+                if enemy.alert_ticks > 0:
+                    enemy.alert_ticks -= 1
+                if self.rect_in_active_viewport(enemy.x, enemy.y, TILE, TILE) and self.enemy_can_see_player(enemy):
+                    enemy.shoot_timer_ticks -= 1
+                    if enemy.shoot_timer_ticks <= 0:
+                        enemy.shoot_timer_ticks = enemy.shoot_interval_ticks
+                        self.spawn_enemy_projectile(enemy)
+                else:
+                    enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, enemy.shoot_interval_ticks)
+                continue
             enemy.frame_counter = actor_walk_counter_next(enemy.frame_counter, direction=enemy.direction)
             old_x = enemy.x
             enemy.x += enemy.direction * enemy.step_px
-            if self.enemy_collides(enemy) or not self.enemy_has_floor_ahead(enemy):
+            if enemy.kind == "ceiling_laser":
+                blocked = self.enemy_collides(enemy) or not self.enemy_has_ceiling_ahead(enemy)
+            elif enemy.kind == "swimmer":
+                # Shark/water swimmers use the same actor counter, but do not
+                # need a floor probe. They reverse on body collision/level edge.
+                blocked = self.enemy_collides(enemy) or enemy.x < 0 or enemy.x + TILE > LEVEL_W * TILE
+            else:
+                blocked = self.enemy_collides(enemy) or not self.enemy_has_floor_ahead(enemy)
+            if blocked:
                 enemy.x = old_x
                 enemy.direction *= -1
                 enemy.frame_counter = actor_walk_counter_next(0, direction=enemy.direction)
@@ -582,6 +634,16 @@ class OpenAgentApp:
                     # him.  Keep the timer warm but do not let off-screen /
                     # back-turned guards fire blindly every period.
                     enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, enemy.shoot_interval_ticks)
+
+        self.update_projectiles_tick()
+
+        kept_explosions: list[Explosion] = []
+        for explosion in self.entities.explosions:
+            explosion.frame_counter += 1
+            explosion.ticks_left -= 1
+            if explosion.ticks_left > 0:
+                kept_explosions.append(explosion)
+        self.entities.explosions = kept_explosions
 
         kept_popups: list[ScorePopup] = []
         for popup in self.entities.score_popups:
@@ -604,10 +666,25 @@ class OpenAgentApp:
             step = 1 if dx > 0 else -1
             for _ in range(abs(int(dx))):
                 p.x += step
+                barrel = self.player_touching_barrel()
+                if barrel is not None:
+                    if self.try_push_barrel(barrel, step):
+                        pass
+                    else:
+                        # EXE state 0x1388/0x1389 handles the barrel/player
+                        # overlap as a transient actor interaction instead of a
+                        # hard tile collision.  When pushed into a wall the
+                        # barrel is turned/nudged away and the player is allowed
+                        # to pass through its cell until the overlap resolves.
+                        self.release_barrel_against_wall(barrel, step)
                 if self.player_collides():
                     p.x -= step
                     blocked = True
+                    self._ignore_barrel_collision = None
                     break
+                if self._ignore_barrel_collision is not None and not self.player_overlaps_barrel(self._ignore_barrel_collision):
+                    self._ignore_barrel_collision = None
+                    self._ignore_barrel_collision_ticks = 0
         if dy:
             step = 1 if dy > 0 else -1
             for _ in range(abs(int(dy))):
@@ -701,6 +778,9 @@ class OpenAgentApp:
         platform = self.platform_below()
         if platform is not None:
             candidates.append(float(platform.y - PLAYER_H))
+        barrel = self.barrel_below()
+        if barrel is not None:
+            candidates.append(float(barrel.y - PLAYER_H))
         return min(candidates) if candidates else None
 
     def player_collides(self) -> bool:
@@ -708,6 +788,16 @@ class OpenAgentApp:
         for probe in player_body_probes(p.x, p.y):
             if self.cell_blocks_body(probe.tile_x, probe.tile_y):
                 return True
+            probe_x = probe.tile_x * TILE + (probe.pixel_x % TILE)
+            probe_y = probe.tile_y * TILE + (probe.pixel_y % TILE)
+            for enemy in self.entities.enemies:
+                if self.actor_is_indestructible_solid(enemy) and self.actor_contains_point(enemy, probe_x, probe_y):
+                    return True
+            for barrel in self.entities.barrels:
+                if barrel is self._ignore_barrel_collision and self._ignore_barrel_collision_ticks > 0:
+                    continue
+                if barrel.x <= probe_x <= barrel.x + TILE - 1 and barrel.y <= probe_y <= barrel.y + TILE - 1:
+                    return True
         return False
 
     def player_floor_blocked(self, prev_bottom: float, new_bottom: float) -> bool:
@@ -786,34 +876,54 @@ class OpenAgentApp:
         p.fire_cooldown = 0.22
         start_x = p.x + (PLAYER_W - 1 if p.facing > 0 else -2)
         start_y = p.y + 7
-        self.entities.projectiles.append(Projectile(start_x, start_y, p.facing, hostile=False))
+        self.entities.projectiles.append(Projectile(start_x, start_y, p.facing, speed=4 * DOS_TICK_HZ, hostile=False, bank=1, tile_right=38, tile_left=39))
         return True
 
-    def enemy_can_see_player(self, enemy) -> bool:
-        """Approximate the EXE guard firing gate.
+    def active_camera(self) -> tuple[int, int]:
+        p = self.player
+        max_x = max(0, LEVEL_W * TILE - ACTIVE_VIEW_W)
+        max_y = max(0, LEVEL_H * TILE - ACTIVE_VIEW_H)
+        x = int(min(max(p.x + PLAYER_W / 2 - ACTIVE_VIEW_W / 2, 0), max_x))
+        y = int(min(max(p.y + PLAYER_H / 2 - ACTIVE_VIEW_H / 2, 0), max_y))
+        return x, y
 
-        The SAM1 branch around 0x63CD first compares the actor and player tile
-        rows, then checks whether the player lies in front of DS:34E2 before
-        calling projectile helper 0x5784.  Treat body-solid cells between the
-        guard and player as blocking line of sight.
+    def rect_in_active_viewport(self, x: float, y: float, w: int = TILE, h: int = TILE, margin: int = 0) -> bool:
+        cam_x, cam_y = self.active_camera()
+        return not (
+            x + w < cam_x - margin
+            or x > cam_x + ACTIVE_VIEW_W + margin
+            or y + h < cam_y - margin
+            or y > cam_y + ACTIVE_VIEW_H + margin
+        )
+
+    def enemy_can_see_player(self, enemy) -> bool:
+        """Approximate the EXE actor firing gates.
+
+        Horizontal guards compare the player row and facing direction before
+        calling projectile helper 0x5784.  The bank-12 ceiling crawler/state
+        0x21 uses the same timer machinery but tests a vertical column below it
+        and emits a downward laser/projectile.
         """
         if not enemy.can_shoot:
             return False
         p = self.player
-        enemy_row = int(enemy.y + 8) // TILE
-        player_row = int(p.y + PLAYER_COLLISION_BOTTOM // 2) // TILE
+        if enemy.kind == "ceiling_laser":
+            # State 0x21 waits until the actor is active/on-screen, then checks
+            # whether the player is underneath the emitter column.  Use 16 px
+            # column overlap rather than a single exact tile index so the shot
+            # triggers when the player is visibly below the ceiling cannon.
+            if not self.rect_in_active_viewport(enemy.x, enemy.y, TILE, TILE):
+                return False
+            center_delta = abs((enemy.x + TILE / 2) - (p.x + PLAYER_W / 2))
+            return center_delta <= 10 and p.y > enemy.y
+        enemy_row = int(enemy.y) // TILE
+        player_row = int(p.y + 8) // TILE
         if enemy_row != player_row:
             return False
         if enemy.direction > 0 and p.x <= enemy.x:
             return False
         if enemy.direction < 0 and p.x >= enemy.x:
             return False
-        start = int(enemy.x + (TILE if enemy.direction > 0 else -1)) // TILE
-        end = int(p.x + PLAYER_W // 2) // TILE
-        step = 1 if end >= start else -1
-        for tile_x in range(start, end + step, step):
-            if self.cell_blocks_body(tile_x, enemy_row):
-                return False
         return True
 
     def bank14_shot_hits_back(self, enemy, shot: Projectile) -> bool:
@@ -825,38 +935,113 @@ class OpenAgentApp:
         return shot.direction == enemy.direction
 
     def spawn_enemy_projectile(self, enemy) -> None:
-        # Bank-14 shooter guards use the same light actor-slot behaviour as the
-        # simple walkers, plus a periodic horizontal shot.  The EXE stores their
-        # active sprite in DS:34E0 and uses variants 24/32 as shooters; this
-        # prototype mirrors the visible behaviour while the exact projectile
-        # slot table is still being mapped.
+        if enemy.kind == "ceiling_laser":
+            # State 0x21 / object 0x0345 emits the vertical bank-12 laser family
+            # when the player is underneath it.  The projectile helper still
+            # advances it at 4 px/tick, but the sprite is an animated vertical
+            # beam, not the horizontal player bullet.
+            start_x = enemy.x + 1
+            start_y = enemy.y + TILE - 2
+            self.entities.projectiles.append(
+                Projectile(
+                    start_x,
+                    start_y,
+                    0,
+                    speed=4 * DOS_TICK_HZ,
+                    hostile=True,
+                    bank=CEILING_LASER_PROJECTILE_BANK,
+                    tile_right=CEILING_LASER_PROJECTILE_TILES[0],
+                    tile_left=CEILING_LASER_PROJECTILE_TILES[0],
+                    dx_px=0,
+                    dy_px=4,
+                    anim_tiles=CEILING_LASER_PROJECTILE_TILES,
+                )
+            )
+            return
+        if enemy.kind == "stationary_shooter":
+            # EXE states 0x0A/0x0B use projectile object 0x01D6, while
+            # 0x0C/0x0D use 0x01E8/0x01EC.  Those resolve to the decoded
+            # bank-4 sprites below.  The helper call passes speed=4.
+            bank, tile_right, tile_left = STATIONARY_SHOOTER_PROJECTILE.get(enemy.code, (1, 38, 39))
+            start_x = enemy.x + STATIONARY_SHOOTER_SPAWN_X_OFFSET.get(enemy.code, TILE - 2 if enemy.direction > 0 else -2)
+            start_y = enemy.y + 8
+            self.entities.projectiles.append(
+                Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=bank, tile_right=tile_right, tile_left=tile_left)
+            )
+            return
+        # Bank-14 shooter guards and the player share projectile helper 0x5784
+        # with object_id=0.  That helper resolves to active object 0x0027,
+        # displayed here as bank 1 tiles 38/39, speed=4 px/tick.
         start_x = enemy.x + (TILE - 2 if enemy.direction > 0 else -2)
         start_y = enemy.y + 8
-        self.entities.projectiles.append(Projectile(start_x, start_y, enemy.direction, speed=115.0, hostile=True))
+        self.entities.projectiles.append(Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=1, tile_right=38, tile_left=39))
 
-    def update_projectiles(self, dt: float) -> None:
+    def spawn_projectile_explosion(self, x: float, y: float) -> None:
+        # Impact branch near SAM1:0x4F15 and enemy hit branch near 0x5C59 turns
+        # the projectile actor into the short hit spark.  The visible decoded
+        # sprite family is bank 5 tiles 24..27, not the unrelated bank-6 frames.
+        self.entities.explosions.append(Explosion(float(x - 8), float(y - 8)))
+
+    def actor_rect(self, enemy: Enemy) -> tuple[float, float, float, float]:
+        width = TILE * 2 if enemy.code in {0xAE, 0x24, 0x56, 0x58} else TILE
+        height = TILE * 2 if enemy.code in {0x24} else TILE
+        return enemy.x, enemy.y, enemy.x + width - 1, enemy.y + height - 1
+
+    def actor_contains_point(self, enemy: Enemy, x: float, y: float) -> bool:
+        left, top, right, bottom = self.actor_rect(enemy)
+        return left <= x <= right and top <= y <= bottom
+
+    def enemy_is_shootable(self, enemy: Enemy) -> bool:
+        if enemy.is_rip or enemy.bank == 14:
+            return True
+        if enemy.hp <= 0:
+            return False
+        return object_id_is_shootable(enemy.object_id)
+
+    def actor_is_indestructible_solid(self, enemy: Enemy) -> bool:
+        # Stationary rocket/shooter traps are actor slots for firing/timing, but
+        # not entries in the EXE damage branch.  Treat them as solid map objects:
+        # bullets impact and explode, but the actor is not removed or damaged.
+        # Other unimplemented actor states may be harmful or non-shootable, but
+        # they should not automatically become wall blocks.
+        return enemy.kind == "stationary_shooter"
+
+    def update_projectiles_tick(self) -> None:
         kept: list[Projectile] = []
         for shot in self.entities.projectiles:
-            shot.x += shot.direction * shot.speed * dt
+            shot.frame_counter += 1
+            shot.x += shot.dx_px if shot.dx_px is not None else shot.direction * 4
+            shot.y += shot.dy_px
             tile_x = int(shot.x) // TILE
             tile_y = int(shot.y) // TILE
             if tile_x < 0 or tile_y < 0 or tile_x >= LEVEL_W or tile_y >= LEVEL_H:
                 continue
             if self.cell_blocks_body(tile_x, tile_y):
+                self.spawn_projectile_explosion(shot.x, shot.y)
                 continue
             if shot.hostile:
                 if self.projectile_hits_player(shot):
                     self.hurt_flash = 0.75
+                    self.spawn_projectile_explosion(shot.x, shot.y)
                     continue
                 kept.append(shot)
                 continue
+            blocked_by_actor = None
             hit = None
             for enemy in self.entities.enemies:
-                if enemy.x - 1 <= shot.x <= enemy.x + TILE and enemy.y <= shot.y <= enemy.y + TILE - 1:
-                    hit = enemy
-                    break
+                if self.actor_contains_point(enemy, shot.x, shot.y):
+                    if self.enemy_is_shootable(enemy):
+                        hit = enemy
+                        break
+                    if self.actor_is_indestructible_solid(enemy):
+                        blocked_by_actor = enemy
+                        break
             if hit is not None:
                 self.hit_enemy_with_projectile(hit, shot)
+                self.spawn_projectile_explosion(shot.x, shot.y)
+                continue
+            if blocked_by_actor is not None:
+                self.spawn_projectile_explosion(shot.x, shot.y)
                 continue
             kept.append(shot)
         self.entities.projectiles = kept
@@ -916,15 +1101,22 @@ class OpenAgentApp:
             enemy.shoot_timer_ticks = 0
             enemy.frame_counter = 0
             return
+        if enemy.hp > 1:
+            enemy.hp -= 1
+            enemy.alert_ticks = 8
+            if shot is not None:
+                enemy.direction = -1 if shot.x > enemy.x else 1
+            return
         self.entities.enemies.remove(enemy)
         self.score += 100
         self.spawn_score_popup(enemy.x, enemy.y, 100)
 
     def enemy_collides(self, enemy) -> bool:
-        left = int(enemy.x) // TILE
-        right = int(enemy.x + TILE - 1) // TILE
-        top = int(enemy.y) // TILE
-        bottom = int(enemy.y + TILE - 1) // TILE
+        l, t, r, b = self.actor_rect(enemy)
+        left = int(l) // TILE
+        right = int(r) // TILE
+        top = int(t) // TILE
+        bottom = int(b) // TILE
         for y in range(top, bottom + 1):
             for x in range(left, right + 1):
                 if self.cell_blocks_body(x, y):
@@ -938,6 +1130,15 @@ class OpenAgentApp:
             return False
         cell = self.runtime_collision_cell(foot_x, foot_y)
         return bool(cell and (cell.body_solid or cell.foot_solid))
+
+
+    def enemy_has_ceiling_ahead(self, enemy) -> bool:
+        probe_x = int(enemy.x + (TILE if enemy.direction > 0 else -1)) // TILE
+        probe_y = int(enemy.y - 1) // TILE
+        if probe_x < 0 or probe_x >= LEVEL_W or probe_y < 0:
+            return False
+        cell = self.runtime_collision_cell(probe_x, probe_y)
+        return bool(cell and cell.body_solid)
 
     def platform_collides(self, platform: MovingPlatform) -> bool:
         left = int(platform.x) // TILE
@@ -962,13 +1163,99 @@ class OpenAgentApp:
                 return platform
         return None
 
+    def update_barrel_overlap_state(self) -> None:
+        """Expire the transient pass-through state used for pushable barrels."""
+        barrel = self._ignore_barrel_collision
+        if barrel is None:
+            return
+        if not self.player_overlaps_barrel(barrel):
+            self._ignore_barrel_collision = None
+            self._ignore_barrel_collision_ticks = 0
+            return
+        self._ignore_barrel_collision_ticks = max(0, self._ignore_barrel_collision_ticks - 1)
+        if self._ignore_barrel_collision_ticks == 0:
+            # Do not re-enable collision while still deeply overlapped; that is
+            # what made the port look as if the barrel stuck to the player.
+            self._ignore_barrel_collision_ticks = 1
+
+    def player_overlaps_barrel(self, barrel: PushableBarrel) -> bool:
+        p = self.player
+        return (
+            p.x + PLAYER_W - 1 >= barrel.x
+            and p.x <= barrel.x + TILE - 1
+            and p.y + PLAYER_H - 1 >= barrel.y
+            and p.y <= barrel.y + TILE - 1
+        )
+
+    def release_barrel_against_wall(self, barrel: PushableBarrel, push_step: int) -> None:
+        """Match the EXE-style anti-stick branch for bank6 tile 24 barrels.
+
+        The disassembly around SAM1:0x83c4..0x848a checks the player's
+        shrunken overlap against object id 0x00A7 and then transitions the
+        actor instead of treating it as an ordinary solid tile.  For the Python
+        runtime that means: turn the barrel away from the wall, try to nudge it
+        out of the blocking cell, and temporarily ignore its body collision for
+        the player until the overlap clears.
+        """
+        barrel.direction = -push_step
+        for _ in range(4):
+            if self.try_push_barrel(barrel, -push_step):
+                break
+        self._ignore_barrel_collision = barrel
+        self._ignore_barrel_collision_ticks = 12
+
+    def barrel_below(self) -> PushableBarrel | None:
+        p = self.player
+        player_left = p.x
+        player_right = p.x + PLAYER_W - 1
+        player_bottom = p.y + PLAYER_H
+        for barrel in self.entities.barrels:
+            horizontal = player_right >= barrel.x + 2 and player_left <= barrel.x + TILE - 3
+            vertical = barrel.y <= player_bottom <= barrel.y + 4
+            if horizontal and vertical:
+                return barrel
+        return None
+
+    def player_touching_barrel(self) -> PushableBarrel | None:
+        p = self.player
+        for barrel in self.entities.barrels:
+            if self.player_overlaps_barrel(barrel):
+                return barrel
+        return None
+
+    def barrel_collides(self, barrel: PushableBarrel) -> bool:
+        left = int(barrel.x) // TILE
+        right = int(barrel.x + TILE - 1) // TILE
+        top = int(barrel.y) // TILE
+        bottom = int(barrel.y + TILE - 1) // TILE
+        for y in range(top, bottom + 1):
+            for x in range(left, right + 1):
+                if self.cell_solid(x, y):
+                    return True
+        for other in self.entities.barrels:
+            if other is barrel:
+                continue
+            if barrel.x + TILE - 1 >= other.x and barrel.x <= other.x + TILE - 1 and barrel.y + TILE - 1 >= other.y and barrel.y <= other.y + TILE - 1:
+                return True
+        return False
+
+    def try_push_barrel(self, barrel: PushableBarrel, step: int) -> bool:
+        old_x = barrel.x
+        barrel.x += step
+        if self.barrel_collides(barrel):
+            barrel.x = old_x
+            return False
+        barrel.direction = step
+        return True
+
     def player_on_platform(self) -> bool:
-        return self.platform_below() is not None
+        return self.platform_below() is not None or self.barrel_below() is not None
 
     def update_player_interactions(self, dt: float) -> None:
         self.collect_touching_codes()
         self.collect_rip_enemies()
         self.check_spike_touch()
+        self.check_beam_touch()
         self.check_enemy_touch(dt)
 
     def player_overlapping_cells(self):
@@ -1046,6 +1333,47 @@ class OpenAgentApp:
             self.player.jump_anim_timer = 0
             self.player.grounded = False
             break
+
+    def check_beam_touch(self) -> None:
+        if self.hurt_flash > 0:
+            return
+        p = self.player
+        left, top = p.x, p.y
+        right, bottom = p.x + PLAYER_W - 1, p.y + PLAYER_H - 1
+        for beam in self.entities.beam_traps:
+            if not beam_is_dangerous(beam.timer_ticks):
+                continue
+            phase = beam_phase_for_timer(beam.timer_ticks)
+            if phase is None:
+                continue
+            rects = self.beam_trap_rects(beam, phase)
+            for bx1, by1, bx2, by2 in rects:
+                if right < bx1 or left > bx2 or bottom < by1 or top > by2:
+                    continue
+                self.hurt_flash = 0.75
+                self.player.jump_anim_timer = 0
+                self.player.grounded = False
+                return
+
+    def beam_trap_rects(self, beam: BeamTrap, phase: int) -> list[tuple[float, float, float, float]]:
+        # Damage uses the visible extended bank-3 cels.  The EXE drives object
+        # ids 0x01AD+/0x01B5+ while state 0x0F/0x10 is active.
+        if beam.kind == "vertical":
+            cells = [(0, 0)]
+            if phase >= 1:
+                cells.append((0, -1))
+            if phase >= 2:
+                cells.append((0, -2))
+        else:
+            cells = [(0, 0)]
+            if phase >= 1:
+                cells.append((-1, 0))
+            if phase >= 2:
+                cells.append((-2, 0))
+        return [
+            (beam.x + dx * TILE + 2, beam.y + dy * TILE + 2, beam.x + dx * TILE + TILE - 3, beam.y + dy * TILE + TILE - 3)
+            for dx, dy in cells
+        ]
 
     def check_enemy_touch(self, dt: float) -> None:
         if self.hurt_flash > 0:
@@ -1156,7 +1484,22 @@ class OpenAgentApp:
     def draw_entities(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
         for platform in self.entities.platforms:
             self.draw_code_sprite(frame, platform.code, int(platform.x - cam_x), int(platform.y - cam_y))
+        for barrel in self.entities.barrels:
+            self.draw_code_sprite(frame, barrel.code, int(barrel.x - cam_x), int(barrel.y - cam_y))
+        for satellite in self.entities.satellites:
+            tile = self.episode.tiles16.get(*satellite_tile(satellite.frame_index))
+            if tile:
+                frame.alpha_composite(tile, (int(satellite.x - cam_x), int(satellite.y - cam_y)))
         for enemy in self.entities.enemies:
+            multi_refs = multi_tile_actor_refs(enemy.code, enemy.direction, enemy.frame_counter)
+            if multi_refs is not None:
+                for relx, rely, bank, tile_no in multi_refs:
+                    tile = self.episode.tiles16.get(bank, tile_no)
+                    if tile:
+                        if enemy.code in {0xAE, 0x24, 0x56, 0x58, 0x63} and enemy.direction < 0:
+                            tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                        frame.alpha_composite(tile, (int(enemy.x - cam_x + relx * TILE), int(enemy.y - cam_y + rely * TILE)))
+                continue
             if enemy.bank == 14 and enemy.base_tile is not None:
                 animated = bank14_guard_tile(enemy.base_tile, direction=enemy.direction, frame_counter=enemy.frame_counter)
             else:
@@ -1181,16 +1524,56 @@ class OpenAgentApp:
                 tile = self.episode.tiles16.get(*tile_ref)
                 if tile:
                     frame.alpha_composite(tile, (int(spike.x - cam_x), int(spike.draw_y - cam_y)))
+        for beam in self.entities.beam_traps:
+            self.draw_beam_trap(frame, beam, cam_x, cam_y)
         draw = ImageDraw.Draw(frame)
         for shot in self.entities.projectiles:
             x = int(shot.x - cam_x)
             y = int(shot.y - cam_y)
-            fill = (255, 96, 80, 255) if shot.hostile else (255, 255, 96, 255)
-            draw.rectangle([x, y, x + 3, y + 1], fill=fill)
+            if shot.anim_tiles:
+                tile_no = shot.anim_tiles[(shot.frame_counter // 2) % len(shot.anim_tiles)]
+            else:
+                tile_no = shot.tile_right if shot.direction >= 0 else shot.tile_left
+            tile = self.episode.tiles16.get(shot.bank, tile_no)
+            if tile:
+                frame.alpha_composite(tile, (x, y - 7))
+            else:
+                fill = (255, 96, 80, 255) if shot.hostile else (255, 255, 96, 255)
+                draw.rectangle([x, y, x + 3, y + 1], fill=fill)
+        for explosion in self.entities.explosions:
+            # Player/guard bullet impact spark: decoded bank 5 tiles 24..27.
+            boom_frames = (24, 25, 26, 27)
+            tile = self.episode.tiles16.get(5, boom_frames[min(len(boom_frames) - 1, explosion.frame_counter // 3)])
+            if tile:
+                frame.alpha_composite(tile, (int(explosion.x - cam_x), int(explosion.y - cam_y)))
         for popup in self.entities.score_popups:
             tile = self.episode.tiles16.get(10, popup.tile)
             if tile:
                 frame.alpha_composite(tile, (int(popup.x - cam_x), int(popup.y - cam_y)))
+
+    def draw_beam_trap(self, frame: Image.Image, beam: BeamTrap, cam_x: int, cam_y: int) -> None:
+        # Bank 3 beam objects are not telescoping bars.  The static end pieces
+        # stay put and only the middle discharge cel blinks while the timer is
+        # active.  This corrects the earlier pass that animated the whole
+        # 3-tile object in/out.
+        phase = beam_phase_for_timer(beam.timer_ticks)
+        flicker = 0 if phase is None else (beam.timer_ticks // 2) & 1
+        if beam.kind == "vertical":
+            refs: list[tuple[int, int, int, int]] = [
+                (0, -2, 3, 27),  # ceiling/end cap
+                (0, 0, 3, 26),   # base/end cap
+                (0, -1, 3, 28 if phase is None else (29 + flicker)),
+            ]
+        else:
+            refs = [
+                (-2, 0, 3, 32),  # left/end cap
+                (0, 0, 3, 33),   # right/end cap
+                (-1, 0, 3, 34 if phase is None else (35 + flicker)),
+            ]
+        for relx, rely, bank, tile_no in refs:
+            tile = self.episode.tiles16.get(bank, tile_no)
+            if tile:
+                frame.alpha_composite(tile, (int(beam.x - cam_x + relx * TILE), int(beam.y - cam_y + rely * TILE)))
 
     def draw_code_sprite(self, frame: Image.Image, code: int, px: int, py: int) -> None:
         from secret_agent_editor.mapping import TILE_MAP

@@ -1,0 +1,14 @@
+{
+  "bank12_ceiling_laser": {
+    "raw_code": "0x63",
+    "object_id": "0x0345",
+    "state": "0x21",
+    "speed_px_per_tick": 2,
+    "timer": "random(20)+30",
+    "bank_tiles": "bank12 36..43"
+  },
+  "pushable_barrel": {
+    "raw_code": "0xA7",
+    "bank_tile": "bank6 tile24"
+  }
+}

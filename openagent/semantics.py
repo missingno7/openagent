@@ -20,11 +20,24 @@ WORLD_COAST_CODES = frozenset({0x56, 0x57, 0x58, 0x61, 0x62, 0x63, 0x64, 0x65, 0
 WORLD_TREE_CODES = frozenset({0x42, 0x43, 0x44, 0x45, 0x46, 0x47})
 WORLD_BLOCKED_CODES = frozenset({0x00, 0x20}) | WORLD_WATER_CODES | WORLD_COAST_CODES | WORLD_TREE_CODES
 MOVING_PLATFORM_CODE = 0x62
+ROTATING_SATELLITE_CODE = 0x23
+PUSHABLE_BARREL_CODE = 0xA7
 RIDING_ENEMY_CODE = 0x65
-WALKER_ENEMY_CODES = frozenset({0x65, 0x6E, 0x75, 0x76, 0x7F})
+WALKER_ENEMY_CODES = frozenset({0x65, 0x6E, 0x75, 0x76, 0x7F, 0x5F})
+# Multi-tile actors recovered from the same EXE special actor table.  They are
+# not static composite scenery; the object id lives in DS:34E0 and the actor
+# update branch moves/animates them.
+MULTI_TILE_ACTOR_CODES = frozenset({0xAE, 0x24, 0x56, 0x58, 0x63})
+# Stationary shooter traps recovered from actor states 0x0A..0x0D.
+# 0x52/0x3C face right, 0x51/0x3D face left; they fire only when the
+# player is on the same 16px row and in front of the emitter.
+STATIONARY_SHOOTER_CODES = frozenset({0x52, 0x51, 0x3C, 0x3D})
 FLOOR_SPIKE_CODE = 0x3F
 CEILING_SPIKE_CODE = 0x41
 SPIKE_TRAP_CODES = frozenset({FLOOR_SPIKE_CODE, CEILING_SPIKE_CODE})
+BEAM_VERTICAL_CODE = 0x3B
+BEAM_HORIZONTAL_CODE = 0x3E
+BEAM_TRAP_CODES = frozenset({BEAM_VERTICAL_CODE, BEAM_HORIZONTAL_CODE})
 # Bank-14 human guard family.  These raw map bytes are not normal static
 # sprites: the EXE special-low actor table creates actor records for them and
 # the active sprite lives in actor field DS:34E0, not in the runtime cell.
@@ -227,7 +240,7 @@ MISSION_PASSABLE_CODES = frozenset(
     if code_known_to_exe_collision_table(code)
     and not exe_code_has_body_solid(code)
 )
-DYNAMIC_MISSION_CODES = frozenset({MISSION_PLAYER_START_CODE, MOVING_PLATFORM_CODE}) | WALKER_ENEMY_CODES | BANK14_GUARD_CODES | SPIKE_TRAP_CODES
+DYNAMIC_MISSION_CODES = frozenset({MISSION_PLAYER_START_CODE, MOVING_PLATFORM_CODE, ROTATING_SATELLITE_CODE, PUSHABLE_BARREL_CODE}) | WALKER_ENEMY_CODES | MULTI_TILE_ACTOR_CODES | STATIONARY_SHOOTER_CODES | BANK14_GUARD_CODES | SPIKE_TRAP_CODES | BEAM_TRAP_CODES
 
 
 def mission_code_semantics(code: int) -> CodeSemantics | None:

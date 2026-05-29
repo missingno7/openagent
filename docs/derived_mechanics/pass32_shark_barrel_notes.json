@@ -1,0 +1,20 @@
+{
+  "shark_raw_0x5f": {
+    "bank": 4,
+    "right_tiles": [46, 47],
+    "left_tiles": [44, 45],
+    "mirrored": false
+  },
+  "pushable_barrel_raw_0xa7": {
+    "bank": 6,
+    "tile": 24,
+    "object_id": "0x00A7",
+    "transient_states": ["0x1388", "0x1389"],
+    "exe_evidence": [
+      "SAM1 0x834f: DS:34E0 = 0x00A7",
+      "SAM1 0x8335/0x84b3: DS:34E8 = 0x1389",
+      "SAM1 0x83c4..0x848a: player/barrel overlap bounding checks with player_x+3/player_x+12"
+    ],
+    "runtime_model": "When a pushed barrel is blocked by a wall, turn/nudge it away and keep player-barrel collision disabled until overlap clears."
+  }
+}

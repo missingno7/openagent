@@ -1,0 +1,25 @@
+{
+  "satellite_raw_0x23": {
+    "object_id": "0x0097",
+    "behavior_state": "0x20",
+    "timer_period_ticks": 3,
+    "frames": [[10, 0], [10, 1], [10, 2], [10, 3]],
+    "correction": "Pass23 incorrectly reused the generic actor walk counter. The visible satellite phase is driven by the 3-tick period in the special actor entry. Runtime and static preview now both use 3 DOS ticks per frame."
+  },
+  "moving_platform_raw_0x62": {
+    "start_direction": "left",
+    "implemented_step_px_per_dos_tick": 2,
+    "note": "The earlier 1 px/tick prototype was visibly slow. The actor movement code uses integer pixel steps from DS:34E6; the platform branch is now modeled as a 2 px/tick actor-style mover while the exact raw-token init branch remains a target for the next extractor."
+  },
+  "multi_tile_actors_promoted_to_runtime": {
+    "0xAE": {"object_id": "0x0353", "behavior_state": "0x2A", "speed": 2, "layout": "bank0 two-wide pairs (0,4)..(3,7)"},
+    "0x24": {"object_id": "0x0065", "behavior_state": "0x27", "speed": 2, "layout": "bank2 two-high helmet actor top 40..43 bottom 44..47"},
+    "0x56": {"object_id": "0x0321", "behavior_state": "0x1E", "speed": 2, "layout": "bank12 two-high actor"},
+    "0x58": {"object_id": "0x0331", "behavior_state": "0x1F", "speed": 2, "layout": "bank12 two-high actor"},
+    "0x63": {"object_id": "0x0345", "behavior_state": "0x21", "speed": 2, "layout": "bank12 one-tile actor"}
+  },
+  "projectiles": {
+    "player_and_bank14_guard_projectile_sprites": [[10, 10], [10, 11]],
+    "runtime_change": "Projectiles are now drawn with decoded bank10 sprites instead of debug rectangles. Guards use the same projectile family as the player as requested."
+  }
+}

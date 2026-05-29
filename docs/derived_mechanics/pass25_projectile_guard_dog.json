@@ -1,0 +1,27 @@
+{
+  "projectile_helper": {
+    "entry": "SAM1:0x5784",
+    "default_object_id_argument": 0,
+    "default_projectile_object_id_written": "0x0027",
+    "state_written": "0x0007",
+    "player_and_guard_speed_px_per_tick": 4,
+    "implemented_sprite_mapping": {
+      "right": {"bank": 1, "tile": 38},
+      "left": {"bank": 1, "tile": 39}
+    }
+  },
+  "bank14_guard_firing_gate": {
+    "branch": "SAM1:0x63C0..0x6455",
+    "row_check": "(player_y + 8) >> 4 == actor_y >> 4",
+    "direction_check": "actor must face player",
+    "extra_wall_raycast": false,
+    "projectile_call": "object_id=0, speed=4"
+  },
+  "bank0_two_tile_actor_0xAE": {
+    "object_id": "0x0353",
+    "state": "0x2A",
+    "speed_px_per_tick": 2,
+    "right_pairs": [[0,4],[1,5],[2,6],[3,7]],
+    "left_pairs_before_cell_flip": [[4,0],[5,1],[6,2],[7,3]]
+  }
+}

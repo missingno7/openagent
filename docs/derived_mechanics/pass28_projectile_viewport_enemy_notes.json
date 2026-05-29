@@ -1,0 +1,35 @@
+{
+  "projectile_helper": {
+    "function": "SAM1 CS:5784",
+    "object_zero_branch": {
+      "object_id": "0x0027",
+      "state": "0x0007",
+      "frame_counter": "0x0001",
+      "speed": "caller argument, player/bank14 guards pass 4 px/tick"
+    },
+    "impact_branch": {
+      "evidence": "SAM1 CS:4EDD..4F3A checks states 0x07/0x0E/0x13/0x1388 and marks 34EB=1 before drawing impact; SAM1 CS:5C59..5C82 rewrites hit projectile actor to state 0x1388, object 0x0187, frame_counter=1, speed=0.",
+      "runtime_mapping": "object 0x0187 is represented as bank 6 tiles 44,47,45,46 explosion frames"
+    }
+  },
+  "active_viewport": {
+    "standard_view": [
+      320,
+      200
+    ],
+    "scroll_x_address": "DS:6838",
+    "evidence": "Projectile/actor motion code around SAM1 CS:80A6..8102 keeps scroll bounded to 0..0x140 and compares player position against scroll+0x96/0xAA. This supports a fixed 320x200 gameplay viewport independent of a larger editor window.",
+    "runtime_rule": "Stationary shooter/trap actors only count down their firing timer while their actor rect intersects the fixed 320x200 active viewport."
+  },
+  "enemy_durability": {
+    "aux_dc_hint": "The special actor spawn table writes an extra aux/DC value of 3 for several multi-tile actors such as raw 0xAE dog and bank2/other larger actors. Runtime uses this as a provisional EXE-derived hitpoint hint until the per-state damage branches are fully decoded.",
+    "implemented": {
+      "0xAE": 3,
+      "0x56": 3,
+      "0x58": 3,
+      "0x63": 3,
+      "0x65": 3,
+      "0x6E": 3
+    }
+  }
+}

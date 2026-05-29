@@ -1,0 +1,309 @@
+[
+  {
+    "raw_code_hex": "0xAE",
+    "object_id_hex": "0x0353",
+    "behavior_state_hex": "0x2A",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "two-wide bank0 walker"
+  },
+  {
+    "raw_code_hex": "0x38",
+    "object_id_hex": "0x015F",
+    "behavior_state_hex": "0x01",
+    "step_px": 1,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "bank14 guard tier 0"
+  },
+  {
+    "raw_code_hex": "0x39",
+    "object_id_hex": "0x0167",
+    "behavior_state_hex": "0x02",
+    "step_px": 1,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "bank14 guard tier 8"
+  },
+  {
+    "raw_code_hex": "0x30",
+    "object_id_hex": "0x016F",
+    "behavior_state_hex": "0x03",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "bank14 guard tier 16"
+  },
+  {
+    "raw_code_hex": "0x67",
+    "object_id_hex": "0x0177",
+    "behavior_state_hex": "0x04",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 50,
+      "add": 50
+    },
+    "implemented": true,
+    "runtime_note": "bank14 shooter guard tier 24"
+  },
+  {
+    "raw_code_hex": "0x47",
+    "object_id_hex": "0x017F",
+    "behavior_state_hex": "0x05",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 30
+    },
+    "implemented": true,
+    "runtime_note": "bank14 shooter guard tier 32"
+  },
+  {
+    "raw_code_hex": "0x56",
+    "object_id_hex": "0x0321",
+    "behavior_state_hex": "0x1E",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 30
+    },
+    "implemented": true,
+    "runtime_note": "bank12 two-high actor, first-pass walker"
+  },
+  {
+    "raw_code_hex": "0x58",
+    "object_id_hex": "0x0331",
+    "behavior_state_hex": "0x1F",
+    "step_px": 2,
+    "timer_period": 60,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "bank12 two-high actor, first-pass walker"
+  },
+  {
+    "raw_code_hex": "0x23",
+    "object_id_hex": "0x0097",
+    "behavior_state_hex": "0x20",
+    "step_px": null,
+    "timer_period": 3,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "rotating satellite actor, bank10 0..3, 3-tick period"
+  },
+  {
+    "raw_code_hex": "0x63",
+    "object_id_hex": "0x0345",
+    "behavior_state_hex": "0x21",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 30
+    },
+    "implemented": true,
+    "runtime_note": "bank12 one-tile actor, first-pass walker"
+  },
+  {
+    "raw_code_hex": "0x65",
+    "object_id_hex": "0x0075",
+    "behavior_state_hex": "0x22",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "simple walker, bank2 16..23"
+  },
+  {
+    "raw_code_hex": "0x75",
+    "object_id_hex": "0x006D",
+    "behavior_state_hex": "0x23",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": false,
+    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+  },
+  {
+    "raw_code_hex": "0x76",
+    "object_id_hex": "0x0071",
+    "behavior_state_hex": "0x24",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": false,
+    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+  },
+  {
+    "raw_code_hex": "0x6E",
+    "object_id_hex": "0x0085",
+    "behavior_state_hex": "0x26",
+    "step_px": 2,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 30
+    },
+    "implemented": true,
+    "runtime_note": "mirrored simple walker, bank2 32..35"
+  },
+  {
+    "raw_code_hex": "0x24",
+    "object_id_hex": "0x0065",
+    "behavior_state_hex": "0x27",
+    "step_px": 2,
+    "timer_period": 60,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "two-high bank2 helmet actor, first-pass synchronized animation"
+  },
+  {
+    "raw_code_hex": "0x5B",
+    "object_id_hex": "0x01B3",
+    "behavior_state_hex": "0x29",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": false,
+    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+  },
+  {
+    "raw_code_hex": "0x7F",
+    "object_id_hex": "0x0261",
+    "behavior_state_hex": "0x06",
+    "step_px": 2,
+    "timer_period": 2,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "mirrored simple walker, bank5 8..11"
+  },
+  {
+    "raw_code_hex": "0x52",
+    "object_id_hex": "0x01D0",
+    "behavior_state_hex": "0x0A",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 55
+    },
+    "implemented": true,
+    "runtime_note": "stationary shooter right, projectile 0x01D6"
+  },
+  {
+    "raw_code_hex": "0x51",
+    "object_id_hex": "0x01D1",
+    "behavior_state_hex": "0x0B",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 55
+    },
+    "implemented": true,
+    "runtime_note": "stationary shooter left, projectile 0x01D6"
+  },
+  {
+    "raw_code_hex": "0x3C",
+    "object_id_hex": "0x01E7",
+    "behavior_state_hex": "0x0C",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 55
+    },
+    "implemented": true,
+    "runtime_note": "stationary shooter right, projectile 0x01E8"
+  },
+  {
+    "raw_code_hex": "0x3D",
+    "object_id_hex": "0x01EB",
+    "behavior_state_hex": "0x0D",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": {
+      "random_max_exclusive": 20,
+      "add": 55
+    },
+    "implemented": true,
+    "runtime_note": "stationary shooter left, projectile 0x01EC"
+  },
+  {
+    "raw_code_hex": "0x3B",
+    "object_id_hex": "0x01B3",
+    "behavior_state_hex": "0x0F",
+    "step_px": null,
+    "timer_period": 30,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "vertical timed bank3 beam trap, state 0x0F"
+  },
+  {
+    "raw_code_hex": "0x3E",
+    "object_id_hex": "0x01B3",
+    "behavior_state_hex": "0x10",
+    "step_px": null,
+    "timer_period": 30,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "horizontal timed bank3 beam trap, state 0x10"
+  },
+  {
+    "raw_code_hex": "0x3F",
+    "object_id_hex": "0x01B3",
+    "behavior_state_hex": "0x11",
+    "step_px": null,
+    "timer_period": 30,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "floor spike trap, state 0x11"
+  },
+  {
+    "raw_code_hex": "0x41",
+    "object_id_hex": "0x01B3",
+    "behavior_state_hex": "0x12",
+    "step_px": null,
+    "timer_period": 30,
+    "timer_period_random": null,
+    "implemented": true,
+    "runtime_note": "ceiling spike trap, state 0x12"
+  },
+  {
+    "raw_code_hex": "0x40",
+    "object_id_hex": "0x0131",
+    "behavior_state_hex": "0x2B",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": false,
+    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+  },
+  {
+    "raw_code_hex": "0xD4",
+    "object_id_hex": "0x0135",
+    "behavior_state_hex": "0x2C",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": false,
+    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+  },
+  {
+    "raw_code_hex": "0x78",
+    "object_id_hex": "0x0103",
+    "behavior_state_hex": "0x2C",
+    "step_px": null,
+    "timer_period": null,
+    "timer_period_random": null,
+    "implemented": false,
+    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+  }
+]
