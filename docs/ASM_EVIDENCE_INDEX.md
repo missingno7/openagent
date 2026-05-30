@@ -44,9 +44,9 @@ It is intentionally concise: use it to find the current source of truth quickly.
 ### Normal mission player movement
 - Fields: `DS:681E`, `DS:34AF`, `DS:34EA`, `DS:6EC1`
 - Status: `asm_partial`
-- Evidence: pass 9, pass 12, pass 80-83
-- Confirmed: normal horizontal ramp, normal jump/fall shared table, apex transition tick, atomic falling, and dynamic-platform crossing landing.
-- Current gaps: exact static one-way `+0x1CD` probe ordering, original dynamic-platform actor overlap branch, raw-`0xA7` barrel overlap fallback, ladders/direct vertical movement, difficulty modifiers.
+- Evidence: pass 9, pass 12, pass 80-84
+- Confirmed: normal horizontal ramp, normal jump/fall shared table, apex transition tick, atomic falling, exact static `+0x1CC/+0x1CD` fall probes, and dynamic-platform crossing landing.
+- Current gaps: original dynamic-platform actor overlap branch, raw-`0xA7` barrel overlap fallback, actor-backed solid fall overlap, ladders/direct vertical movement, difficulty modifiers.
 
 ### Enemy `0x24`
 - Object/state: `0x0065/state 0x27`

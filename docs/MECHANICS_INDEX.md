@@ -4,7 +4,7 @@ This is the quick orientation table. Detailed evidence remains in `docs/passes/`
 
 | Area | Current implementation | Evidence / notes |
 |---|---|---|
-| Player movement | EXE-style horizontal step ramp, normal `6EC1/34EA/34AF` jump/fall table, fire pose timing, dynamic-platform crossing landing | `openagent/player_motion.py`, `openagent/runtime.py`, `openagent/animation.py`, pass 9/12/80-83 notes |
+| Player movement | EXE-style horizontal step ramp, normal `6EC1/34EA/34AF` jump/fall table, exact static fall probes, fire pose timing, dynamic-platform crossing landing | `openagent/player_motion.py`, `openagent/runtime.py`, `openagent/animation.py`, pass 9/12/80-84 notes |
 | Player ammo | Starts at 5, pickup +5, capped to 99 | pass 65 |
 | Player damage | Generic hurt decrements lives; hard hazards enter death state | pass 55, pass 62, pass 63 |
 | Player death | Death countdown and two-cel death draw path; still needs full state audit | pass 57, pass 62 |

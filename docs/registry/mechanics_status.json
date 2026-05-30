@@ -461,7 +461,8 @@
         "docs/passes/exe_mechanisms_pass80.md",
         "docs/passes/exe_mechanisms_pass81.md",
         "docs/passes/exe_mechanisms_pass82.md",
-        "docs/passes/exe_mechanisms_pass83.md"
+        "docs/passes/exe_mechanisms_pass83.md",
+        "docs/passes/exe_mechanisms_pass84.md"
       ],
       "asm_refs": [
         "SAM1:0x532D..0x53C0",
@@ -475,14 +476,13 @@
       ],
       "confidence": "medium",
       "known_gaps": [
-        "Static one-way foot collision is still broader than SAM1:0xB957..0xBA30: the EXE gates +0x1CD probes behind DS:34EA > 0x0A and uses offset-specific samples.",
         "Moving-platform landing now uses an atomic downward crossing interval, but the original dynamic actor/player overlap branch for raw 0x62 still needs isolation.",
+        "Actor-backed solid fall overlap remains a separated reconstruction until the original actor/player overlap branches are isolated.",
         "Pushable-barrel overlap still uses a reconstructed pixel-granular fallback because raw 0xA7 has a separate actor interaction path.",
         "Ladder/direct vertical movement flags DS:6EC3/DS:6EC4 are not implemented.",
         "Difficulty modifiers DS:69B0/DS:69A4 beyond the normal path are not modeled."
       ],
       "next_actions": [
-        "Trace and reproduce the offset-specific static +0x1CD probes in SAM1:0xB957..0xBA30.",
         "Isolate the raw-0x62 dynamic actor/player overlap branch and compare it with the crossing reconstruction.",
         "Trace the full raw-0xA7 actor overlap path and replace its reconstructed pixel fallback.",
         "Trace and implement ladder/direct vertical movement.",

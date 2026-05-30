@@ -1229,14 +1229,25 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         prev_bottom = p.y + PLAYER_COLLISION_BOTTOM
         p.y += step
         new_bottom = p.y + PLAYER_COLLISION_BOTTOM
-        landing_y = self.player_landing_y(prev_bottom, new_bottom)
-        if self.player_collides() or landing_y is not None:
-            if landing_y is not None:
-                p.y = landing_y
-            else:
-                # Body-solid landing branches at SAM1:0xB936..0xB948 align Y
-                # down to the containing 16-pixel row.
-                p.y = float(int(p.y) & ~0x0F)
+        # B8B3 has its own downward probes; it does not call the generic B7D9
+        # four-corner overlap helper. Both body and one-way landings align Y
+        # down to the containing 16-pixel row.
+        if self.player_fall_static_blocked():
+            p.y = float(int(p.y) & ~0x0F)
+            p.grounded = True
+            p.jump_anim_timer = 0
+            return True
+        landing_y = self.dynamic_player_landing_y(prev_bottom, new_bottom)
+        if landing_y is not None:
+            p.y = landing_y
+            p.grounded = True
+            p.jump_anim_timer = 0
+            return True
+        if self.player_dynamic_body_collides():
+            # Dynamic solid actors do not live in the reconstructed runtime
+            # grid. Keep their overlap resolution separate from the exact
+            # static B8B3 probes until their actor/player branches are isolated.
+            p.y = float(int(p.y) & ~0x0F)
             p.grounded = True
             p.jump_anim_timer = 0
             return True
@@ -1281,11 +1292,47 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             candidates.append(barrel_y)
         return min(candidates) if candidates else None
 
+    def player_fall_static_blocked(self) -> bool:
+        """Mirror the static runtime-grid probes in SAM1:0xB902..0xBA30."""
+        p = self.player
+        sample_xs = (int(p.x + 3) // TILE, int(p.x + 12) // TILE)
+        body_y = int(p.y + 16) // TILE
+        if any(self.cell_blocks_body(tile_x, body_y) for tile_x in sample_xs):
+            return True
+        # B94D skips the +0x1CD one-way path for the shallow part of the fall.
+        if p.fall_ticks <= 0x0A:
+            return False
+        foot_y = int(p.y + 16) // TILE
+        if not any(self.cell_blocks_foot(tile_x, foot_y) for tile_x in sample_xs):
+            return False
+        # B9D6..BA30 rejects a platform cell that is already present around
+        # y+7. This is what limits +0x1CD to crossing a top surface.
+        upper_y = int(p.y + 7) // TILE
+        return not any(self.cell_blocks_foot(tile_x, upper_y) for tile_x in sample_xs)
+
+    def dynamic_player_landing_y(self, prev_bottom: float, new_bottom: float) -> float | None:
+        """Return a crossed moving-actor top without applying static-grid rules."""
+        candidates = [
+            landing_y
+            for landing_y in (
+                self.platform_landing_y(prev_bottom, new_bottom),
+                self.player_barrel_landing_y(prev_bottom, new_bottom),
+            )
+            if landing_y is not None
+        ]
+        return min(candidates) if candidates else None
+
     def player_collides(self) -> bool:
         p = self.player
         for probe in player_body_probes(p.x, p.y):
             if self.cell_blocks_body(probe.tile_x, probe.tile_y):
                 return True
+        return self.player_dynamic_body_collides()
+
+    def player_dynamic_body_collides(self) -> bool:
+        """Probe actor-backed solids that are absent from the static grid."""
+        p = self.player
+        for probe in player_body_probes(p.x, p.y):
             probe_x = probe.tile_x * TILE + (probe.pixel_x % TILE)
             probe_y = probe.tile_y * TILE + (probe.pixel_y % TILE)
             for enemy in self.entities.enemies:
@@ -1403,6 +1450,15 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             tile_top = y * TILE
             return prev_bottom <= tile_top + 1 and new_bottom >= tile_top
         return False
+
+    def cell_blocks_foot(self, x: int, y: int) -> bool:
+        """Read runtime byte +0x1CD without broadening it into body solidity."""
+        if x < 0 or y < 0 or x >= LEVEL_W or y >= LEVEL_H:
+            return True
+        if any(ox == x and oy - 1 == y for ox, oy, _code, _layer in self.opened_exit_doors):
+            return False
+        cell = self.runtime_collision_cell(x, y)
+        return bool(cell and cell.foot_solid)
 
     def runtime_cell_key(self, x: int, y: int, code: int, layer: str) -> tuple[int, int, int, str]:
         return (x, y, code, layer)

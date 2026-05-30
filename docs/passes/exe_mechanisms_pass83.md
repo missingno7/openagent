@@ -38,8 +38,7 @@ used when the platform carries the player horizontally.
 The same crossing shape is applied to pushable-barrel tops so both dynamic
 surfaces behave consistently while their actor-specific ASM paths are audited.
 
-## Remaining gap
+## Follow-up
 
-Static one-way collision is still broader than the EXE: the port checks its
-foot channel on every falling tick, while `B8B3` gates the `+0x1CD` path behind
-`DS:34EA > 0x0A` and uses offset-specific probes. That needs a dedicated pass.
+Pass 84 replaces the broad static one-way helper in the normal fall path with
+the EXE-shaped `DS:34EA > 0x0A`, `y+16`, and `y+7` probes identified here.
