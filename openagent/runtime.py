@@ -111,6 +111,7 @@ from .semantics import (
     EXIT_DOOR_CODE,
     TELEPORTER_CODE,
     MISSION_PLAYER_START_CODE,
+    SPEED_BONUS_CODE,
     door_unlocked_by,
     is_collectible_code,
     is_door_code,
@@ -165,12 +166,20 @@ from .game_constants import (
     PLAYER_VERTICAL_COUNTER_INITIAL,
     PLAYER_VERTICAL_STEP_TABLE,
     PLAYER_W,
+    PLAYER_SPEED_BONUS_STEP,
+    PLAYER_SPEED_BONUS_TOTAL_TICKS,
     STARTING_AMMO,
     WORLD_MOVE_SPEED,
 )
 
+# Runtime object visuals that immediately route to the player-death branch in
+# the EXE interaction dispatcher (SAM1:0xD221..0xD254).  The raw level bytes
+# that write these cA values include water 0x60 and several other hard hazards.
+HARD_DEATH_RUNTIME_VISUAL_IDS = frozenset({0x01F3, 0x025B, 0x0265, 0x0267, 0x0268})
+WATER_CODE = 0x60
+
 class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
-    def __init__(self, campaign: Campaign, *, episode: int = 1, level: int = 0, zoom: int = DEFAULT_ZOOM) -> None:
+    def __init__(self, campaign: Campaign, *, episode: int = 1, level: int = 0, zoom: int = DEFAULT_ZOOM, visual_interpolation: bool = False) -> None:
         self.campaign = campaign
         self.episode_numbers = campaign.episode_numbers
         self.episode_index = max(0, self.episode_numbers.index(episode) if episode in self.episode_numbers else 0)
@@ -228,6 +237,11 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._dynamic_source_keys_cache: set[tuple[int, int, int, str]] | None = None
         self._logic_accum = 0.0
         self._entity_accum = 0.0
+        self.visual_interpolation_enabled = bool(visual_interpolation)
+        self._render_frame_id = 0
+        self._player_render_snapshot_frame_id = -1
+        self._prev_player_render_pos: tuple[float, float] = (self.player.x, self.player.y)
+        self._prev_entity_render_pos: dict[int, tuple[float, float]] = {}
         self._collision_grid_cache = None
         self._collision_grid_cache_key = None
         self.anim_ticks = 0
@@ -236,7 +250,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.sound = SoundPlayer.from_campaign(campaign, self.episode_number)
 
         self.root = tk.Tk()
-        self.root.title("OpenAgent")
+        self.update_window_title()
         self.root.resizable(True, True)
         self.root.minsize(320, 240)
         self.canvas = tk.Canvas(self.root, width=self.canvas_w, height=self.canvas_h, highlightthickness=0, bg="black")
@@ -317,6 +331,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         elif key in {"Tab"}:
             self.show_codes = not self.show_codes
             self.load_level(reset_player=False)
+        elif key in {"i", "I"}:
+            self.visual_interpolation_enabled = not self.visual_interpolation_enabled
+            self.update_window_title()
+            self.draw()
         elif key in {"plus", "KP_Add", "equal"}:
             self.change_zoom(1)
         elif key in {"minus", "KP_Subtract"}:
@@ -396,6 +414,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # hidden platforms, collected cells and animated tile phase cache.
         self.rebuild_level_image()
         self.last_tick = time.perf_counter()
+        self.reset_render_interpolation_state()
         self.draw()
 
     def rebuild_level_image(self) -> None:
@@ -429,6 +448,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             # platforms/enemies and the player are drawn twice. Runtime-removed
             # pickups/doors are skipped by exact visual cell identity.
             skip_codes = {code for code in range(256) if is_dynamic_mission_code(code)}
+            # Raw 0x60 water is not a normal actor slot, but its translated
+            # runtime visual 0x01F3 has a special draw-time two-cel branch in
+            # the EXE.  Do not bake the raw static sprite into either cached
+            # layer; draw_fast_animated_tiles() overlays the live phase so the
+            # cached foreground cannot hide the animation.
+            skip_codes.add(WATER_CODE)
             if not self.has_glasses:
                 skip_codes.add(HIDDEN_PLATFORM_CODE)
             skip_cells = set(self.collected_cells) | set(self.opened_doors) | set(self.opened_exit_doors)
@@ -519,6 +544,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             yield cell.x, cell.y, cell.code
 
     def tick(self) -> None:
+        self._render_frame_id += 1
         now = time.perf_counter()
         dt = min(now - self.last_tick, 1 / 20)
         self.last_tick = now
@@ -684,6 +710,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._logic_accum = min(self._logic_accum + dt, 0.15)
         while self._logic_accum >= 1.0 / DOS_TICK_HZ:
             self._logic_accum -= 1.0 / DOS_TICK_HZ
+            self.snapshot_player_render_position()
             self.update_player_tick()
 
     def update_player_tick(self) -> None:
@@ -728,11 +755,16 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         p.fire_held = bool(fire)
 
         if moving:
-            blocked = self.move_player_horizontal_tick(move_dir * horizontal_step_for_hold_ticks(p.move_hold_ticks))
-            if blocked:
-                # The full-step collision probe at SAM1:0xB7D9 resets DS:681E
-                # once a blocked horizontal move is detected.
+            blocked = self.move_player_horizontal_tick(
+                move_dir * horizontal_step_for_hold_ticks(p.move_hold_ticks, p.speed_bonus_step)
+            )
+            if blocked and self.horizontal_block_resets_move_counter():
+                # SAM1:0xB898 clears DS:681E only when DS:681C > 1.  The
+                # reconstructed level model keeps level 0 as the overworld and
+                # uses the original 1-based mission level number after that.
                 p.move_hold_ticks = 0
+
+        self.update_speed_bonus_tick()
 
         # SAM1:0xBC0E first calls the B8B3 fall pass whenever DS:6EC1 is clear.
         # This also runs while standing: landing does not clear DS:34EA, so a
@@ -773,6 +805,32 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             p.fall_ticks = FALL_COUNTER_MAX
             self.update_player_anim_state(moving=moving)
 
+
+    def horizontal_block_resets_move_counter(self) -> bool:
+        # B7D9 does not always clear the acceleration counter on a blocked
+        # horizontal destination probe.  It does so only under the DS:681C > 1
+        # gate.  In this runtime level 0 is the overworld and mission indices
+        # are the same 1-based values used by the EXE's level-state variable.
+        return self.level_index > 1
+
+    def update_speed_bonus_tick(self) -> None:
+        p = self.player
+        if p.speed_bonus_ticks <= 0:
+            p.speed_bonus_step = 0
+            p.speed_bonus_ticks = 0
+            return
+        p.speed_bonus_ticks -= 1
+        if p.speed_bonus_ticks <= 0:
+            p.speed_bonus_step = 0
+            p.speed_bonus_ticks = 0
+
+    def start_speed_bonus(self) -> None:
+        # SAM1:0xD659..0xD65F: collecting runtime visual 0x0139 writes
+        # DS:69A4=4 and DS:69A6=0x00D8.  The timer ISR decrements 69A6 once per
+        # 0x14 ticks, so the fixed-tick runtime stores the expanded count.
+        self.player.speed_bonus_step = PLAYER_SPEED_BONUS_STEP
+        self.player.speed_bonus_ticks = PLAYER_SPEED_BONUS_TOTAL_TICKS
+
     def update_entities(self, dt: float) -> None:
         # Actor frame counters and simple walker motion are tick based in the
         # EXE.  Updating them at the 60Hz Tk redraw cadence made enemy animation
@@ -782,6 +840,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._entity_accum = min(self._entity_accum + dt, 0.15)
         while self._entity_accum >= 1.0 / DOS_TICK_HZ:
             self._entity_accum -= 1.0 / DOS_TICK_HZ
+            self.snapshot_dynamic_render_positions()
             self.anim_ticks += 1
             self.update_entities_tick()
         # Projectile actors are normal EXE actor slots too. Advance them in
@@ -974,6 +1033,40 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 if self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
                     self.hurt_player()
                 continue
+            if enemy.kind == "lightning_flyer":
+                # State 0x26 / raw 0x6E is a drive-stop-lightning actor.  The
+                # ASM branch (SAM1:0xA70F..0xA894) discards the candidate X while
+                # its hold timer is active and creates object 0x0089 at
+                # (actor_x, actor_y + 16).  Model this as a render-visible cycle:
+                # drive for the DS:34D8-derived interval, stop while the
+                # lightning actor is alive, then drive again.
+                enemy.frame_counter = actor_walk_counter_next(enemy.frame_counter, direction=enemy.direction)
+                if enemy.alert_ticks > 0:
+                    enemy.alert_ticks -= 1
+                    continue
+                if enemy.aux_ticks > 0:
+                    enemy.aux_ticks -= 1
+                    if enemy.aux_ticks <= 0:
+                        enemy.shoot_timer_ticks = max(1, enemy.shoot_interval_ticks)
+                    continue
+
+                old_x = enemy.x
+                enemy.x += enemy.direction * enemy.step_px
+                blocked = self.enemy_collides(enemy) or enemy.x < 0 or enemy.x + TILE > LEVEL_W * TILE
+                if blocked:
+                    enemy.x = old_x
+                    enemy.direction *= -1
+                    enemy.frame_counter = actor_walk_counter_next(0, direction=enemy.direction)
+
+                if enemy.shoot_timer_ticks > 0:
+                    enemy.shoot_timer_ticks -= 1
+                if enemy.shoot_timer_ticks <= 0:
+                    self.spawn_lightning_bolt(enemy)
+                    enemy.aux_ticks = 0x1E
+                if self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                    self.hurt_player()
+                continue
+
             enemy.frame_counter = (
                 state2a_dog_counter_next(enemy.frame_counter, direction=enemy.direction)
                 if enemy.code == 0xAE
@@ -1056,27 +1149,6 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                         continue
                 else:
                     enemy.alert_ticks = 0
-            if enemy.kind == "lightning_flyer":
-                # State 0x26 / raw 0x6E uses two timers:
-                #   DS:34DE = pause/hold timer. While non-zero, the candidate
-                #              X is discarded, so the actor animates but does
-                #              not actually advance.
-                #   DS:34DA = active lightning timer. When it is zero, the EXE
-                #              immediately calls helper 0x5784 with object 0x89
-                #              at (actor_x, actor_y + 16), then increments it.
-                #              When it reaches DS:34D8, it resets to zero and
-                #              reloads DS:34DE = 0x6E.
-                if enemy.alert_ticks > 0:
-                    enemy.alert_ticks -= 1
-                    continue
-                period = max(1, enemy.shoot_interval_ticks)
-                if enemy.shoot_timer_ticks == 0:
-                    self.spawn_lightning_bolt(enemy)
-                enemy.shoot_timer_ticks += 1
-                if enemy.shoot_timer_ticks >= period:
-                    enemy.shoot_timer_ticks = 0
-                    enemy.alert_ticks = 0x6E
-                continue
             if enemy.alert_ticks > 0:
                 enemy.alert_ticks -= 1
             if enemy.kind == "ceiling_laser" and enemy.can_shoot:
@@ -1708,6 +1780,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.collect_touching_codes()
         self.check_exit_door_touch()
         self.collect_rip_enemies()
+        self.check_hard_death_tile_touch()
         self.check_laser_field_touch()
         self.check_spike_touch()
         self.check_beam_touch()
@@ -1756,6 +1829,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                     self.score += score_value
                     if cell.code == FLOPPY_DISK_CODE:
                         self.has_floppy_disk = True
+                    if cell.code == SPEED_BONUS_CODE:
+                        self.start_speed_bonus()
                     self.play_sound(SOUND_SCORE_1000 if score_value >= 1000 else SOUND_PICKUP)
                     popup_tile = score_popup_tile_for_value(score_value)
                     if popup_tile is not None:
@@ -1856,6 +1931,38 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._laser_computer_last_warn_key = None
         self.collected_cells |= self.laser_field_source_keys()
         self.play_sound(0x18)
+
+    @staticmethod
+    def runtime_visual_ids_for_code(code: int) -> frozenset[int]:
+        return frozenset(write.cA for write in runtime_cell_writes_for_code(code) if write.cA)
+
+    def check_hard_death_tile_touch(self) -> None:
+        # The interaction dispatcher does not only test raw map bytes.  It runs
+        # after the cell byte has been translated to a runtime cA visual id;
+        # SAM1:0xD221..0xD254 then kills the player on 0x01F3 (water 0x60),
+        # 0x025B, 0x0265, 0x0267 and 0x0268.  This catches water and the other
+        # immediate-death source tiles that were previously just decorative.
+        if self.is_world_map or self.player_dead_timer > 0:
+            return
+        p = self.player
+        left, top = p.x, p.y
+        right, bottom = p.x + PLAYER_W - 1, p.y + PLAYER_H - 1
+        for cell in self.player_overlapping_cells():
+            key = self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+            if key in self.collected_cells or key in self.opened_doors or key in self.opened_exit_doors:
+                continue
+            if cell.code == LASER_FIELD_CODE and (self.laser_field_deactivated or not self.laser_field_visible()):
+                continue
+            if not (self.runtime_visual_ids_for_code(cell.code) & HARD_DEATH_RUNTIME_VISUAL_IDS):
+                continue
+            hx1 = cell.x * TILE + 2
+            hy1 = cell.y * TILE + 2
+            hx2 = cell.x * TILE + TILE - 3
+            hy2 = cell.y * TILE + TILE - 3
+            if right < hx1 or left > hx2 or bottom < hy1 or top > hy2:
+                continue
+            self.kill_player()
+            return
 
     def check_laser_field_touch(self) -> None:
         if self.hurt_flash > 0 or self.laser_field_deactivated or not self.laser_field_visible():
@@ -1982,14 +2089,78 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 return f"   Enter: level {level}"
         return ""
 
-    def camera(self) -> tuple[int, int]:
-        p = self.player
+    def update_window_title(self) -> None:
+        suffix = " | interpolation: on (I)" if self.visual_interpolation_enabled else " | interpolation: off (I)"
+        self.root.title("OpenAgent" + suffix)
+
+    def reset_render_interpolation_state(self) -> None:
+        self._player_render_snapshot_frame_id = -1
+        self._prev_player_render_pos = (self.player.x, self.player.y)
+        self._prev_entity_render_pos = {}
+        self.snapshot_dynamic_render_positions(force=True)
+
+    def snapshot_player_render_position(self) -> None:
+        # Capture the state before the first fixed simulation mutation in this
+        # Tk frame.  Entity ticks may carry the player before update_player_tick
+        # runs, so do not overwrite that earlier pre-tick position.
+        if self._player_render_snapshot_frame_id == self._render_frame_id:
+            return
+        self._prev_player_render_pos = (self.player.x, self.player.y)
+        self._player_render_snapshot_frame_id = self._render_frame_id
+
+    def snapshot_dynamic_render_positions(self, *, force: bool = False) -> None:
+        # This is render-only state: it is never consulted by collision,
+        # projectiles, actor logic or interaction checks.
+        if not force:
+            self.snapshot_player_render_position()
+        positions: dict[int, tuple[float, float]] = {}
+        for collection in (
+            self.entities.platforms,
+            self.entities.barrels,
+            self.entities.satellites,
+            self.entities.enemies,
+            self.entities.projectiles,
+            self.entities.explosions,
+            self.entities.score_popups,
+        ):
+            for obj in collection:
+                positions[id(obj)] = (float(obj.x), float(obj.y))
+        self._prev_entity_render_pos = positions
+
+    def render_interpolation_alpha(self, accumulator: float) -> float:
+        if not self.visual_interpolation_enabled or self.is_world_map:
+            return 1.0
+        tick_dt = 1.0 / DOS_TICK_HZ
+        return max(0.0, min(1.0, accumulator / tick_dt))
+
+    @staticmethod
+    def _lerp(a: float, b: float, t: float) -> float:
+        return a + (b - a) * t
+
+    def player_render_position(self) -> tuple[float, float]:
+        if not self.visual_interpolation_enabled or self.is_world_map:
+            return self.player.x, self.player.y
+        alpha = self.render_interpolation_alpha(self._logic_accum)
+        old_x, old_y = self._prev_player_render_pos
+        return self._lerp(old_x, self.player.x, alpha), self._lerp(old_y, self.player.y, alpha)
+
+    def entity_render_position(self, obj) -> tuple[float, float]:
+        if not self.visual_interpolation_enabled or self.is_world_map:
+            return float(obj.x), float(obj.y)
+        old = self._prev_entity_render_pos.get(id(obj))
+        if old is None:
+            return float(obj.x), float(obj.y)
+        alpha = self.render_interpolation_alpha(self._entity_accum)
+        return self._lerp(old[0], float(obj.x), alpha), self._lerp(old[1], float(obj.y), alpha)
+
+    def camera(self, player_pos: tuple[float, float] | None = None) -> tuple[int, int]:
+        px, py = player_pos if player_pos is not None else (self.player.x, self.player.y)
         view_w, screen_h = self.viewport_size()
         view_h = max(1, screen_h - STATUS_BAR_H)
         max_x = max(0, LEVEL_W * TILE - view_w)
         max_y = max(0, LEVEL_H * TILE - view_h)
-        x = int(min(max(p.x + PLAYER_W / 2 - view_w / 2, 0), max_x))
-        y = int(min(max(p.y + PLAYER_H / 2 - view_h / 2, 0), max_y))
+        x = int(min(max(px + PLAYER_W / 2 - view_w / 2, 0), max_x))
+        y = int(min(max(py + PLAYER_H / 2 - view_h / 2, 0), max_y))
         return x, y
 
     def draw(self) -> None:
@@ -1998,17 +2169,18 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             self.render_level_image_for_phase(current_phase)
         if self.level_image is None:
             return
-        cam_x, cam_y = self.camera()
+        player_rx, player_ry = self.player_render_position()
+        cam_x, cam_y = self.camera((player_rx, player_ry))
         view_w, screen_h = self.viewport_size()
         world_h = max(1, screen_h - STATUS_BAR_H)
         world_frame = self.level_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + world_h)).convert("RGBA")
         frame = Image.new("RGBA", (view_w, screen_h), (0, 0, 0, 255))
         frame.alpha_composite(world_frame, (0, 0))
+        self.draw_fast_animated_tiles(frame, cam_x, cam_y)
         draw = ImageDraw.Draw(frame)
 
-        p = self.player
-        px = int(p.x - cam_x)
-        py = int(p.y - cam_y)
+        px = int(player_rx - cam_x)
+        py = int(player_ry - cam_y)
         if self.is_world_map:
             self.draw_world_player(frame, px, py)
             self.draw_world_entrance_numbers(frame, cam_x, cam_y)
@@ -2037,6 +2209,41 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.frame_photo = ImageTk.PhotoImage(out)
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self.frame_photo, anchor="nw")
+
+    def draw_fast_animated_tiles(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
+        # Raw 0x60 / runtime visual 0x01F3 has its own EXE draw branch that
+        # alternates bank 4 tile 48 with the paired bank 4 tile 0 graphic.  The
+        # previous static-layer cache only refreshed it on the slower baked-tile
+        # phase, so overlay it from the fixed actor tick for the visibly faster
+        # water cadence while keeping gameplay collision unchanged.
+        if self.is_world_map:
+            return
+        info = self.episode.levels[self.level_index]
+        water_tile_no = 48 if (self.anim_ticks & 1) == 0 else 0
+        water_tile = self.episode.tiles16.get(4, water_tile_no)
+        if water_tile is None:
+            return
+        view_w, screen_h = self.viewport_size()
+        world_h = max(1, screen_h - STATUS_BAR_H)
+        for cell in iter_map_cells(info):
+            if cell.code != WATER_CODE:
+                continue
+            key = self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+            if key in self.collected_cells or key in self.opened_doors or key in self.opened_exit_doors:
+                continue
+            px = cell.x * TILE - cam_x
+            py = cell.y * TILE - cam_y
+            if px <= -TILE or py <= -TILE or px >= view_w or py >= world_h:
+                continue
+            dst_x = max(0, px)
+            dst_y = max(0, py)
+            src_x = max(0, -px)
+            src_y = max(0, -py)
+            src_r = min(TILE, view_w - dst_x + src_x)
+            src_b = min(TILE, world_h - dst_y + src_y)
+            if src_r <= src_x or src_b <= src_y:
+                continue
+            frame.alpha_composite(water_tile.crop((src_x, src_y, src_r, src_b)), (dst_x, dst_y))
 
     def draw_world_player(self, frame: Image.Image, px: int, py: int) -> None:
         self.draw_player_sprite(frame, px, py, offset=(-2, -1))
@@ -2094,13 +2301,16 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
 
     def draw_entities(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
         for platform in self.entities.platforms:
-            self.draw_code_sprite(frame, platform.code, int(platform.x - cam_x), int(platform.y - cam_y))
+            rx, ry = self.entity_render_position(platform)
+            self.draw_code_sprite(frame, platform.code, int(rx - cam_x), int(ry - cam_y))
         for barrel in self.entities.barrels:
-            self.draw_code_sprite(frame, barrel.code, int(barrel.x - cam_x), int(barrel.y - cam_y))
+            rx, ry = self.entity_render_position(barrel)
+            self.draw_code_sprite(frame, barrel.code, int(rx - cam_x), int(ry - cam_y))
         for satellite in self.entities.satellites:
             tile = self.episode.tiles16.get(*satellite_tile(satellite.frame_index))
             if tile:
-                frame.alpha_composite(tile, (int(satellite.x - cam_x), int(satellite.y - cam_y)))
+                rx, ry = self.entity_render_position(satellite)
+                frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
         for enemy in self.entities.enemies:
             if enemy.code == 0x24:
                 multi_refs = state27_actor_refs(
@@ -2117,7 +2327,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                         if enemy.code in {0xAE, 0x24, 0x56, 0x58, 0x63} and enemy.direction < 0:
                             tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                         tile = self.apply_enemy_hit_flash(tile, enemy)
-                        frame.alpha_composite(tile, (int(enemy.x - cam_x + relx * TILE), int(enemy.y - cam_y + rely * TILE)))
+                        rx, ry = self.entity_render_position(enemy)
+                        frame.alpha_composite(tile, (int(rx - cam_x + relx * TILE), int(ry - cam_y + rely * TILE)))
                 continue
             if enemy.bank == 14 and enemy.base_tile is not None:
                 animated = bank14_guard_tile(enemy.base_tile, direction=enemy.direction, frame_counter=enemy.frame_counter)
@@ -2127,13 +2338,25 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 tile = self.episode.tiles16.get(*state2b_tile(enemy.frame_counter))
                 if tile:
                     tile = self.apply_enemy_hit_flash(tile, enemy)
-                    frame.alpha_composite(tile, (int(enemy.x - cam_x), int(enemy.y - cam_y)))
+                    rx, ry = self.entity_render_position(enemy)
+                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
                     continue
             if enemy.kind == "state2c_anim":
                 tile = self.episode.tiles16.get(*state2c_tile(enemy.code, enemy.frame_counter))
                 if tile:
                     tile = self.apply_enemy_hit_flash(tile, enemy)
-                    frame.alpha_composite(tile, (int(enemy.x - cam_x), int(enemy.y - cam_y)))
+                    rx, ry = self.entity_render_position(enemy)
+                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+                    continue
+            if enemy.kind == "state17_landmine":
+                # State 0x17 was updating DS:34D6 correctly, but the renderer
+                # fell through to draw_code_sprite(0x4D), i.e. the original
+                # static map marker.  Use the object-id draw branch recovered
+                # from SAM1:0x36C2..0x3725 / 0x3728..0x378E instead.
+                tile = self.episode.tiles16.get(*state17_landmine_tile(enemy.object_id, enemy.frame_counter))
+                if tile:
+                    rx, ry = self.entity_render_position(enemy)
+                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
                     continue
             if animated is not None:
                 tile = self.episode.tiles16.get(*animated)
@@ -2147,9 +2370,11 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                     if enemy.code in {0x6E, 0x7F} and enemy.direction < 0:
                         tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                     tile = self.apply_enemy_hit_flash(tile, enemy)
-                    frame.alpha_composite(tile, (int(enemy.x - cam_x), int(enemy.y - cam_y)))
+                    rx, ry = self.entity_render_position(enemy)
+                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
                     continue
-            self.draw_code_sprite(frame, enemy.code, int(enemy.x - cam_x), int(enemy.y - cam_y))
+            rx, ry = self.entity_render_position(enemy)
+            self.draw_code_sprite(frame, enemy.code, int(rx - cam_x), int(ry - cam_y))
         for spike in self.entities.spike_traps:
             tile_ref = spike_frame_for_timer(spike.kind, spike.timer_ticks)
             if tile_ref is not None:
@@ -2160,8 +2385,9 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             self.draw_beam_trap(frame, beam, cam_x, cam_y)
         draw = ImageDraw.Draw(frame)
         for shot in self.entities.projectiles:
-            x = int(shot.x - cam_x)
-            y = int(shot.y - cam_y)
+            rx, ry = self.entity_render_position(shot)
+            x = int(rx - cam_x)
+            y = int(ry - cam_y)
             if shot.is_impact:
                 if shot.impact_visible:
                     boom_frames = (24, 25, 26, 27)
@@ -2186,11 +2412,13 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             boom_frames = (24, 25, 26, 27)
             tile = self.episode.tiles16.get(5, boom_frames[min(len(boom_frames) - 1, explosion.frame_counter // 3)])
             if tile:
-                frame.alpha_composite(tile, (int(explosion.x - cam_x), int(explosion.y - cam_y)))
+                rx, ry = self.entity_render_position(explosion)
+                frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
         for popup in self.entities.score_popups:
             tile = self.episode.tiles16.get(10, popup.tile)
             if tile:
-                frame.alpha_composite(tile, (int(popup.x - cam_x), int(popup.y - cam_y)))
+                rx, ry = self.entity_render_position(popup)
+                frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
 
     def draw_beam_trap(self, frame: Image.Image, beam: BeamTrap, cam_x: int, cam_y: int) -> None:
         # Bank 3 beam objects are not telescoping bars.  The static end pieces
@@ -2214,7 +2442,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         for relx, rely, bank, tile_no in refs:
             tile = self.episode.tiles16.get(bank, tile_no)
             if tile:
-                frame.alpha_composite(tile, (int(beam.x - cam_x + relx * TILE), int(beam.y - cam_y + rely * TILE)))
+                rx, ry = self.entity_render_position(beam)
+                frame.alpha_composite(tile, (int(rx - cam_x + relx * TILE), int(ry - cam_y + rely * TILE)))
 
     def draw_code_sprite(self, frame: Image.Image, code: int, px: int, py: int) -> None:
         from secret_agent_editor.mapping import TILE_MAP
@@ -2240,9 +2469,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--episode", type=int, default=1, choices=(1, 2, 3))
     parser.add_argument("--level", type=int, default=0)
     parser.add_argument("--zoom", type=int, default=DEFAULT_ZOOM, help="initial integer zoom, default 2 for a 320x200 DOS viewport")
+    parser.add_argument("--interpolate-render", action="store_true", help="smooth only the render positions between fixed DOS ticks")
     args = parser.parse_args(argv)
 
     campaign = load_campaign(args.source)
-    app = OpenAgentApp(campaign, episode=args.episode, level=args.level, zoom=args.zoom)
+    app = OpenAgentApp(campaign, episode=args.episode, level=args.level, zoom=args.zoom, visual_interpolation=args.interpolate_render)
     app.run()
     return 0

@@ -29,3 +29,7 @@ class Player:
     fall_ticks: int = PLAYER_VERTICAL_COUNTER_INITIAL
     move_hold_ticks: int = 0
     last_move_dir: int = 0
+    # Mirrors DS:69A4/DS:69A6.  Normal movement has no speed bonus; the speed
+    # pickup sets DS:69A4=4 until the expanded countdown reaches zero.
+    speed_bonus_step: int = 0
+    speed_bonus_ticks: int = 0

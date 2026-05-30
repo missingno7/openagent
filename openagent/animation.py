@@ -290,6 +290,8 @@ def state17_landmine_tile(object_id: int, frame_counter: int) -> tuple[int, int]
         # base.  Keep the current decoded bank-5 approximation but match the
         # original timing instead of using a made-up four-tick cadence.
         return (5, (42, 43, 44, 44)[min(3, frame // 3)])
-    # Idle object 0x0270 uses floor(DS:34D6 / 5) and the update branch wraps
-    # DS:34D6 after 9, so frames 1..4 and 5..9 form the two-frame blink.
-    return (5, 41 + min(1, frame // 5))
+    # Idle object 0x0270 is the raw 0x4D mine.  The draw path at
+    # SAM1:0x36C2..0x3725 divides DS:34D6 by five, and the state-0x17 update
+    # wraps non-triggered mines after DS:34D6 > 9.  That produces a two-cel
+    # blink; in the decoded atlas those cels are bank 5 tile 23 and tile 41.
+    return (5, (23, 41)[min(1, (frame - 1) // 5)])

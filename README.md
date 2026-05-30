@@ -16,6 +16,12 @@ Original game files live in `game_data/`. Disassembly references live in `dissas
 python run_openagent.py game_data
 ```
 
+Optional render-only smoothing can be enabled at launch:
+
+```powershell
+python run_openagent.py game_data --interpolate-render
+```
+
 Install the minimal Python dependency first if needed:
 
 ```powershell
@@ -26,7 +32,7 @@ Controls:
 
 - World map: arrows/WASD move, Space/Enter opens the nearby level entrance.
 - Mission levels: arrows/WASD move, Space jumps, Ctrl fires.
-- Global: PgUp/PgDn changes level, Q/E changes episode, M opens the world map, R resets, Tab toggles raw map codes, U toggles unknown-code markers, C toggles collision debug display.
+- Global: PgUp/PgDn changes level, Q/E changes episode, M opens the world map, R resets, Tab toggles raw map codes, U toggles unknown-code markers, C toggles collision debug display, I toggles visual render interpolation.
 
 ## Where to look first
 

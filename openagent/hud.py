@@ -213,6 +213,8 @@ class HUDMixin:
             # 0x0f; it does not draw an invented "A:" label.
             self.draw_hud_digit_string(frame, 0x70, y, f"{max(0, min(HUD_AMMO_MAX, self.ammo)):02d}")
             x = 0xD8
+            if getattr(self.player, "speed_bonus_step", 0) > 0:
+                x += self.draw_hud_icon(frame, x, y, "speed")
             if self.has_floppy_disk:
                 x += self.draw_hud_icon(frame, x, y, "disk")
             if self.has_glasses:
@@ -231,6 +233,8 @@ class HUDMixin:
         self.draw_hud_text(draw, 0, y, f"{self.score % 1000000:06d}", (120, 230, 160, 255))
         self.draw_hud_text(draw, 96, y, f"A:{max(0, min(HUD_AMMO_MAX, self.ammo)):02d}", (230, 170, 185, 255))
         x = 194
+        if getattr(self.player, "speed_bonus_step", 0) > 0:
+            x += self.draw_hud_icon_fallback(draw, x, y, "speed")
         if self.has_floppy_disk:
             x += self.draw_hud_icon_fallback(draw, x, y, "disk")
         if self.has_glasses:

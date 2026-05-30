@@ -480,19 +480,16 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     # armed so the next valid under-column tick fires immediately.
                     shoot_timer_ticks=(
                         (max(0, shoot_interval - 1)) if cell.code == 0x63
-                        # State 0x26/raw 0x6E keeps DS:34DA at zero while
-                        # DS:34DE is the long initial/pause timer.  As soon
-                        # as 34DE reaches zero, the branch checks 34DA == 0
-                        # and immediately spawns object 0x89 before starting
-                        # the active countdown.
-                        else 0 if cell.code in {STATE27_SHOOTER_CODE, 0x6E}
+                        # State 0x26/raw 0x6E drives for its DS:34D8-derived
+                        # interval, then stops and spawns object 0x89.  Earlier
+                        # code started it in the stopped/lightning phase, which
+                        # made it look like it never did the drive-then-fire
+                        # cycle from the original actor branch.
+                        else shoot_interval if cell.code == 0x6E
+                        else 0 if cell.code == STATE27_SHOOTER_CODE
                         else shoot_interval
                     ),
-                    alert_ticks=(
-                        deterministic_range(cell.code, cell.x, cell.y, 100, 149, salt=5)
-                        if cell.code == 0x6E
-                        else 0
-                    ),
+                    alert_ticks=0,
                     # State 0x27/raw 0x24 init at SAM1:0x12D84..0x12DC6:
                     # DS:34D8=0x3C, DS:34DA=0, DS:34DC=3,
                     # DS:34DE=random(0x14)+0x3C.

@@ -26,9 +26,18 @@ PLAYER_H = PLAYER_DRAW_H
 DOS_TICK_HZ = 18.2065
 WORLD_MOVE_SPEED = 72.0
 
-# Routine 0x532D selects integer horizontal step sizes based on DS:681E.  This
-# is the normal DS:69B0=0, DS:69A4=4 path; difficulty modifiers are not modeled.
-PLAYER_STEP_RAMP = ((1, 2, 1), (3, 3, 2), (4, 6, 4), (7, 1000, 8))
+# Routine 0x532D selects integer horizontal step sizes from DS:681E.  In the
+# normal DS:69B0=0 path the unboosted terminal step is 4 px/tick; collecting
+# the speed pickup writes DS:69A4=4, so ticks 7+ become DS:69A4 + 4 = 8.
+PLAYER_STEP_RAMP = ((1, 2, 1), (3, 3, 2), (4, 6, 4))
+PLAYER_TERMINAL_STEP_BASE = 4
+PLAYER_SPEED_BONUS_STEP = 4
+# SAM1:0xD659 writes DS:69A4=4 and DS:69A6=0x00D8.  The timer ISR at
+# SAM1:0x0C0A decrements DS:69A6 once per 0x14 timer ticks; store the runtime
+# countdown expanded into normal fixed game ticks.
+PLAYER_SPEED_BONUS_TIMER_UNITS = 0xD8
+PLAYER_SPEED_BONUS_UNIT_TICKS = 0x14
+PLAYER_SPEED_BONUS_TOTAL_TICKS = PLAYER_SPEED_BONUS_TIMER_UNITS * PLAYER_SPEED_BONUS_UNIT_TICKS
 
 # Both jump ascent and falling use the same byte table at DS:34AF.
 JUMP_ASCENT_END_COUNTER = 0x0A
