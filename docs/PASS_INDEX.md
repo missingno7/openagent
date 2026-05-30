@@ -34,3 +34,6 @@ The pass files are still kept verbatim under `docs/passes/`.
 | 86 | Re-audited normal mission movement against `SAM1:0x532D`, `0xB8B3`, and `0xBC0E..0xBD8A`; fixed the accidental always-on speed-bonus horizontal terminal speed, implemented raw `0x4E` speed bonus timing/HUD icon, and documented why diagonal falling can visually look like ~6 px/tick even though the ASM uses integer 4/8 px terminal steps. |
 
 | 87 | Fixed visible rendering for mine/water animation: `0x4D` now uses `state17_landmine_tile()` in `draw_entities()`, and `0x60` is skipped from cached layers so the live `0x01F3` overlay is not hidden by static foreground. |
+- Pass 88: Re-audited raw `0x77` teleporter alignment/rearm and live bank10 idle/warp animation.
+
+- Pass 89: Re-audited raw `0x58` / object `0x0331` / state `0x1F`; fixed bank12 composite top/bottom frame ranges and added its walk/stop/open `DA/DC/DE` timer cycle.

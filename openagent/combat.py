@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .animation import actor_walk_counter_next
+from .animation import actor_walk_counter_next, state1f_walk_counter_start
 from .entities import Enemy, Explosion, Projectile, ScorePopup
 from .exe_actor_mechanics import (
     BANK14_GUARD_BEHAVIOUR_BY_BASE_TILE,
@@ -617,6 +617,8 @@ class CombatMixin:
             enemy.alert_ticks = 8
             if shot is not None and enemy.code != 0xAE:
                 enemy.direction = -1 if shot.x > enemy.x else 1
+                if enemy.code == 0x58:
+                    enemy.frame_counter = state1f_walk_counter_start(enemy.direction)
             self.play_sound(SOUND_HURT)
             return
         self.entities.enemies.remove(enemy)

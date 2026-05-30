@@ -41,6 +41,7 @@ from .exe_actor_mechanics import (
     STATE17_LANDMINE_PERIOD,
     STATE17_LANDMINE_STATE,
 )
+from .animation import state1f_walk_counter_start
 from .semantics import (
     BANK14_GUARD_CODES,
     BANK14_GUARD_INFO,
@@ -473,6 +474,7 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     code=cell.code,
                     direction=direction,
                     step_px=WALKER_STEP_BY_CODE.get(cell.code, 1),
+                    frame_counter=(state1f_walk_counter_start(direction) if cell.code == STATE1F_SHOOTER_CODE else 0x01),
                     shoot_interval_ticks=shoot_interval,
                     # State 0x21 increments DS:34DA every actor tick.  If the
                     # player is not under it when the period is reached, the EXE
@@ -486,7 +488,9 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                         # made it look like it never did the drive-then-fire
                         # cycle from the original actor branch.
                         else shoot_interval if cell.code == 0x6E
-                        else 0 if cell.code == STATE27_SHOOTER_CODE
+                        # State 0x1F/raw 0x58 initializes DS:34DA=0 and only
+                        # fires after it has counted up to DS:34D8=0x3C.
+                        else 0 if cell.code in {STATE27_SHOOTER_CODE, STATE1F_SHOOTER_CODE}
                         else shoot_interval
                     ),
                     alert_ticks=0,
@@ -495,10 +499,10 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     # DS:34DE=random(0x14)+0x3C.
                     phase_ticks=(
                         deterministic_range(cell.code, cell.x, cell.y, 0x3C, 0x4F, salt=6)
-                        if cell.code == STATE27_SHOOTER_CODE
+                        if cell.code in {STATE27_SHOOTER_CODE, STATE1F_SHOOTER_CODE}
                         else 0
                     ),
-                    aux_ticks=(3 if cell.code == STATE27_SHOOTER_CODE else 0),
+                    aux_ticks=(3 if cell.code in {STATE27_SHOOTER_CODE, STATE1F_SHOOTER_CODE} else 0),
                     kind=(
                         "ceiling_laser" if cell.code == 0x63
                         else "state1e_shooter" if cell.code == STATE1E_SHOOTER_CODE

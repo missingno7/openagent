@@ -26,6 +26,9 @@ from .animation import (
     actor_walk_counter_next,
     state27_walk_counter_next,
     state27_actor_refs,
+    state1f_walk_counter_next,
+    state1f_walk_counter_start,
+    state1f_actor_refs,
     state2a_dog_counter_next,
     walker_tile,
     bank14_guard_tile,
@@ -34,6 +37,9 @@ from .animation import (
     state2b_tile,
     state2c_tile,
     state17_landmine_tile,
+    teleporter_top_tile,
+    teleporter_pad_tile,
+    teleport_warp_tile,
 )
 from .collision import PLAYER_COLLISION_BOTTOM, PLAYER_DRAW_H, PLAYER_DRAW_W, player_body_probes
 from .hud import HUDMixin, STATUS_BAR_H
@@ -454,6 +460,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             # layer; draw_fast_animated_tiles() overlays the live phase so the
             # cached foreground cannot hide the animation.
             skip_codes.add(WATER_CODE)
+            # Raw 0x77 is a composite runtime object: cA=0x00B3 on the
+            # upper solid cell and cA=0x00B7 on the bottom pad.  Draw it live
+            # so the upper bank-10 28/29 animation and the warp overlay can be
+            # driven from fixed DOS ticks instead of being baked into the
+            # static foreground cache.
+            skip_codes.add(TELEPORTER_CODE)
             if not self.has_glasses:
                 skip_codes.add(HIDDEN_PLATFORM_CODE)
             skip_cells = set(self.collected_cells) | set(self.opened_doors) | set(self.opened_exit_doors)
@@ -598,11 +610,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         finally:
             self.player.x, self.player.y = old_x, old_y
 
-    def player_centered_on_teleporter(self, cell) -> bool:
-        # ASM dispatcher compares the active runtime visual 0x00B7 and requires
-        # the player coordinate to be very close to the tile-aligned pad before
-        # setting DS:69E0.  Keep a small tolerance so keyboard/controller motion
-        # can actually land on the same DOS condition.
+    def player_centered_on_world_teleporter(self, cell) -> bool:
+        # Keep the older, looser overworld behaviour.  The pass-88 ASM audit is
+        # for mission runtime visual 0x00B7; level-0 navigation still uses the
+        # prototype island-map movement rules.
         p = self.player
         center_x = p.x + PLAYER_W / 2
         center_y = p.y + PLAYER_H / 2
@@ -610,17 +621,42 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         pad_cy = cell.y * TILE + TILE / 2
         return abs(center_x - pad_cx) <= 8 and abs(center_y - pad_cy) <= 12
 
+    def player_overlaps_teleporter_pad(self, cell) -> bool:
+        # The dispatcher is reached only after the player interaction probe has
+        # hit the runtime cA=0x00B7 pad cell.  Use the EXE collision footprint
+        # rather than the full 16x16 art so the release gate stays armed until
+        # the player actually leaves the destination pad.
+        p = self.player
+        left = p.x + 3
+        right = p.x + 12
+        top = p.y
+        bottom = p.y + PLAYER_COLLISION_BOTTOM
+        pad_left = cell.x * TILE
+        pad_right = pad_left + TILE - 1
+        pad_top = cell.y * TILE
+        pad_bottom = pad_top + TILE - 1
+        return not (right < pad_left or left > pad_right or bottom < pad_top or top > pad_bottom)
+
+    def player_aligned_on_teleporter(self, cell) -> bool:
+        # SAM1:0xD493..0xD4CB masks the pad X to a 16px boundary, then compares
+        # DS:34EE (player X) to that boundary with a strict +/-2 px tolerance.
+        # The previous center-based +/-8 test was too broad: after the ASM's
+        # destination nudge (x +/- 3) it could immediately re-arm the return pad.
+        if not self.player_overlaps_teleporter_pad(cell):
+            return False
+        return abs(self.player.x - cell.x * TILE) <= 2
+
     def update_teleport_release_gate(self) -> None:
-        # The EXE keeps DS:69E0 non-zero throughout the warp and the input/warp
-        # state does not immediately re-enter the dispatcher on the destination
-        # pad.  Mirror that behaviour explicitly: after a warp, require the
-        # player to step off the destination teleporter before another touch can
-        # arm.  This prevents an endless A<->B ping-pong while standing still.
+        # While DS:69E0 is active the EXE refuses to arm another teleport.  On
+        # arrival the stored destination X is deliberately nudged by +/-3 px, so
+        # the next dispatcher pass is not aligned, but keep an explicit gate
+        # until the player has physically left the destination pad.  This makes
+        # normal mission teleporters escapable instead of ping-ponging A<->B.
         if self.teleport_release_cell is None:
             return
         for cell in self.teleporter_cells():
             if (cell.x, cell.y, cell.layer) == self.teleport_release_cell:
-                if self.player_centered_on_teleporter(cell):
+                if self.player_overlaps_teleporter_pad(cell):
                     return
                 break
         self.teleport_release_cell = None
@@ -632,18 +668,25 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         return None
 
     def choose_teleport_target_position(self, target_cell) -> tuple[float, float]:
-        # EXE stores ((col-1)<<4, (row-1)<<4), then nudges X by +/-3 based on a
-        # body-collision probe at the destination.  The decoded map model uses
-        # zero-based cell coordinates, so target_cell.x/y already correspond to
-        # the final pixel cell origin.
+        # SAM1:0xD534..0xD549 stores ((target_col - 1) << 4,
+        # (target_row - 1) << 4).  It then probes runtime byte +0x1CC one tile
+        # below that target row: if that body-solid byte is non-zero it nudges
+        # X by +3, otherwise by -3.  Do not search for an arbitrary clear
+        # fallback; the +/-3 offset is part of why the destination pad does not
+        # instantly satisfy the later +/-2 alignment test.
         base_x = float(target_cell.x * TILE)
         base_y = float(target_cell.y * TILE)
-        candidates = [(base_x - 3, base_y), (base_x + 3, base_y), (base_x, base_y)]
-        clear = self.world_player_body_clear_at if self.is_world_map else self.mission_player_body_clear_at
-        for x, y in candidates:
-            if 0 <= x <= LEVEL_W * TILE - PLAYER_W and 0 <= y <= LEVEL_H * TILE - PLAYER_H and clear(x, y):
-                return x, y
-        return base_x, base_y
+        if self.is_world_map:
+            candidates = [(base_x - 3, base_y), (base_x + 3, base_y), (base_x, base_y)]
+            for x, y in candidates:
+                if 0 <= x <= LEVEL_W * TILE - PLAYER_W and 0 <= y <= LEVEL_H * TILE - PLAYER_H and self.world_player_body_clear_at(x, y):
+                    return x, y
+            return base_x, base_y
+        probe = self.runtime_collision_cell(target_cell.x, target_cell.y + 1)
+        nudge = 3 if bool(probe and probe.body_solid) else -3
+        target_x = min(max(base_x + nudge, 0.0), float(LEVEL_W * TILE - PLAYER_W))
+        target_y = min(max(base_y, 0.0), float(LEVEL_H * TILE - PLAYER_H))
+        return target_x, target_y
 
     def start_teleport(self, source_cell, target_cell) -> None:
         self.teleport_active = True
@@ -662,7 +705,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         if self.teleport_active or self.teleport_release_cell is not None:
             return
         for cell in self.teleporter_cells():
-            if not self.player_centered_on_teleporter(cell):
+            on_pad = self.player_centered_on_world_teleporter(cell) if self.is_world_map else self.player_aligned_on_teleporter(cell)
+            if not on_pad:
                 continue
             target = self.find_partner_teleporter(cell)
             if target is None:
@@ -1032,6 +1076,57 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                         enemy.aux_ticks = 0x1E
                 if self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
                     self.hurt_player()
+                continue
+            if enemy.kind == "state1f_shooter":
+                # SAM1:0x905C..0x977A. Raw 0x58/object 0x0331 is a two-high
+                # bank-12 shooter with its own DS:34D6 frame ranges and the
+                # same walk/stop/open phase fields used by the 0x24 helmet:
+                #   DS:34D8 = 0x3C shot period, DS:34DA counts upward;
+                #   DS:34DE = random(0x14)+0x3C walking phase;
+                #   DS:34DC = 3 initially, then 0x1E stopped/open hold.
+                # Direction +1 starts at frame counter 0x3D; direction -1
+                # starts at 0x01.  While DS:34DE is non-zero, candidate X is
+                # committed; when it reaches zero, the actor stays in place
+                # and only advances/clamps its opening frame until DC refills
+                # DE with 0x50.
+                period = max(1, enemy.shoot_interval_ticks or 0x3C)
+                enemy.shoot_timer_ticks += 1
+                if enemy.shoot_timer_ticks >= period:
+                    enemy.shoot_timer_ticks = 0
+                    if self.enemy_can_see_player(enemy):
+                        self.spawn_enemy_projectile(enemy)
+
+                if enemy.phase_ticks > 0:
+                    enemy.phase_ticks -= 1
+                    if enemy.phase_ticks == 1:
+                        enemy.aux_ticks = 0x1E
+                        enemy.frame_counter = state1f_walk_counter_next(enemy.frame_counter, direction=enemy.direction, walking_phase=False)
+                    else:
+                        old_x = enemy.x
+                        enemy.x += enemy.direction * enemy.step_px
+                        blocked = (
+                            self.enemy_collides(enemy)
+                            or enemy.x < 0
+                            or enemy.x + TILE > LEVEL_W * TILE
+                            or not self.enemy_has_floor_ahead(enemy)
+                        )
+                        if blocked:
+                            enemy.x = old_x
+                            enemy.direction *= -1
+                            enemy.frame_counter = state1f_walk_counter_start(enemy.direction)
+                        else:
+                            enemy.frame_counter = state1f_walk_counter_next(enemy.frame_counter, direction=enemy.direction, walking_phase=True)
+                else:
+                    enemy.frame_counter = state1f_walk_counter_next(enemy.frame_counter, direction=enemy.direction, walking_phase=False)
+                    enemy.aux_ticks -= 1
+                    if enemy.aux_ticks <= 0:
+                        enemy.phase_ticks = 0x50
+                        enemy.aux_ticks = 0x1E
+
+                if self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                    self.hurt_player()
+                if enemy.alert_ticks > 0:
+                    enemy.alert_ticks -= 1
                 continue
             if enemy.kind == "lightning_flyer":
                 # State 0x26 / raw 0x6E is a drive-stop-lightning actor.  The
@@ -2196,6 +2291,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             if self.foreground_image is not None:
                 fg = self.foreground_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + world_h))
                 frame.alpha_composite(fg)
+            self.draw_teleporters(frame, cam_x, cam_y)
+            self.draw_teleport_warp_effect(frame, cam_x, cam_y)
             self.draw_entities(frame, cam_x, cam_y)
 
         self.draw_status_bar(frame, view_w, screen_h)
@@ -2209,6 +2306,54 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.frame_photo = ImageTk.PhotoImage(out)
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self.frame_photo, anchor="nw")
+
+    def draw_teleporters(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
+        if self.is_world_map:
+            return
+        top_ref = teleporter_top_tile(self.anim_ticks)
+        pad_ref = teleporter_pad_tile()
+        top_tile = self.episode.tiles16.get(*top_ref)
+        pad_tile = self.episode.tiles16.get(*pad_ref)
+        if top_tile is None and pad_tile is None:
+            return
+        view_w, screen_h = self.viewport_size()
+        world_h = max(1, screen_h - STATUS_BAR_H)
+        for cell in self.teleporter_cells():
+            key = self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+            if key in self.collected_cells or key in self.opened_doors or key in self.opened_exit_doors:
+                continue
+            px = cell.x * TILE - cam_x
+            py = cell.y * TILE - cam_y
+            if top_tile is not None:
+                self.alpha_composite_clipped(frame, top_tile, px, py - TILE, view_w, world_h)
+            if pad_tile is not None:
+                self.alpha_composite_clipped(frame, pad_tile, px, py, view_w, world_h)
+
+    def draw_teleport_warp_effect(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
+        if not self.teleport_active:
+            return
+        tile = self.episode.tiles16.get(*teleport_warp_tile(self.teleport_timer_ticks))
+        if tile is None:
+            return
+        rx, ry = self.player_render_position()
+        # SAM1:0x21E4..0x2254 uses the player draw coordinates (DS:34EE/F0)
+        # and draws the bank-10 effect over the player during both halves of
+        # the DS:69E2 countdown.
+        frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+
+    @staticmethod
+    def alpha_composite_clipped(frame: Image.Image, tile: Image.Image, px: int, py: int, view_w: int, world_h: int) -> None:
+        if px <= -tile.width or py <= -tile.height or px >= view_w or py >= world_h:
+            return
+        dst_x = max(0, px)
+        dst_y = max(0, py)
+        src_x = max(0, -px)
+        src_y = max(0, -py)
+        src_r = min(tile.width, view_w - dst_x + src_x)
+        src_b = min(tile.height, world_h - dst_y + src_y)
+        if src_r <= src_x or src_b <= src_y:
+            return
+        frame.alpha_composite(tile.crop((src_x, src_y, src_r, src_b)), (dst_x, dst_y))
 
     def draw_fast_animated_tiles(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
         # Raw 0x60 / runtime visual 0x01F3 has its own EXE draw branch that
@@ -2318,13 +2463,15 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                     enemy.frame_counter,
                     walking_phase=(enemy.kind == "state27_shooter" and enemy.phase_ticks > 0),
                 )
+            elif enemy.code == 0x58:
+                multi_refs = state1f_actor_refs(enemy.direction, enemy.frame_counter)
             else:
                 multi_refs = multi_tile_actor_refs(enemy.code, enemy.direction, enemy.frame_counter)
             if multi_refs is not None:
                 for relx, rely, bank, tile_no in multi_refs:
                     tile = self.episode.tiles16.get(bank, tile_no)
                     if tile:
-                        if enemy.code in {0xAE, 0x24, 0x56, 0x58, 0x63} and enemy.direction < 0:
+                        if enemy.code in {0xAE, 0x24, 0x56, 0x63} and enemy.direction < 0:
                             tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                         tile = self.apply_enemy_hit_flash(tile, enemy)
                         rx, ry = self.entity_render_position(enemy)

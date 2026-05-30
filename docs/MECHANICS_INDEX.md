@@ -10,12 +10,13 @@ This is the quick orientation table. Detailed evidence remains in `docs/passes/`
 | Player death | Death countdown and two-cel death draw path; still needs full state audit | pass 57, pass 62 |
 | HUD/status bar | 320x200 framebuffer bottom 8 px, `SAM?02.GFX` 8x8 EGA sprites, HUD page 2; renderer isolated in `openagent/hud.py` | pass 58-61, pass 70, pass 72 |
 | Menu/table text | 8x8 text renderer prototype using `SAM?02.GFX` pages 0/1 | pass 70 |
-| Teleporter `0x77` | Finds paired teleporter; requires release before re-trigger | pass 51, pass 53 |
+| Teleporter `0x77` | Paired mission/world teleporter; mission trigger uses ASM +/-2 px alignment, destination release gate, live bank10 28/29 idle and 36..39 warp effect | pass 51, pass 53, pass 88 |
 | Laser field `0x82` + computer `0x83` | Computer disables active lasers; laser is hard-death hazard | pass 41, pass 55 |
 | Water `0x60` | Runtime visual `0x01F3`; live two-frame render overlay; hard-death on touch | pass 20, pass 23, pass 85, pass 87 |
 | Dynamite `0x74` + exit `0x71` | Dynamite pickup; exit blast; broken passable upper/lower door tiles remain | pass 66-68 |
 | Landmine `0x4D` | Two-frame idle blink; touching idle mine immediately starts hard death and triggered actor | pass 53/54/63/87 |
 | Enemy `0x24` | Helmet walker/shooter; vulnerable only in open/stopped phase; closed helmet flashes on hit | pass 46-49, pass 54 |
+| Enemy `0x58` | Bank-12 two-high state-0x1F shooter; explicit left/right top+bottom frame ranges, walk/stop/open timer cycle | pass 45, pass 89 |
 | Enemy `0x63` | Ceiling crawler laser shooter; track edge handling; immediate fire when armed/player below | pass 51-era fixes and earlier 0x63 notes |
 | Dog `0xAE` | Direction-specific walk frame ranges; hit does not flip direction | pass 54 |
 | Money bag `0x5B` | Falling pickup state; 5000 points | pass 44 |

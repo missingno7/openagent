@@ -43,6 +43,45 @@ PLAYER_WALK_COUNTER_MAX = 0x13
 PLAYER_WALK_COUNTER_STEP = 2  # DS:3506 is initialized to 2
 PLAYER_FIRE_HOLD_SECONDS = 10 / 18.2065  # EXE counter 34EA/6EC1 holds the shot state for about 10 DOS ticks
 
+
+# Raw 0x77 teleporter visuals.  The map token writes runtime visuals 0x00B3
+# (upper solid cell) and 0x00B7 (lower pad).  The draw path treats the bank-10
+# sprite ids as one-based, while the decoded atlas is zero-based.
+TELEPORTER_BANK = 10
+TELEPORTER_TOP_TILES = (28, 29)
+TELEPORTER_PAD_TILE = 32
+TELEPORT_WARP_TILES = (36, 37, 38, 39)
+
+
+def teleporter_top_tile(anim_ticks: int) -> tuple[int, int]:
+    """Return the animated upper cel for raw 0x77.
+
+    The static runtime visual is 0x00B3; in the EXE draw table it is the
+    bank-10 29/30 one-based pair, which is decoded as zero-based tiles 28/29.
+    Use the same small fixed-tick cadence used by other cA redraw objects so
+    the idle animation is independent of render FPS.
+    """
+    return (TELEPORTER_BANK, TELEPORTER_TOP_TILES[(max(0, anim_ticks) // 5) & 1])
+
+
+def teleporter_pad_tile() -> tuple[int, int]:
+    return (TELEPORTER_BANK, TELEPORTER_PAD_TILE)
+
+
+def teleport_warp_tile(timer_ticks: int) -> tuple[int, int]:
+    """Return the bank-10 teleport effect cel for DS:69E2.
+
+    SAM1:0x21E4..0x2254 draws over the player while DS:69E0 is active.
+    For positive DS:69E2 it computes one-based `0x28 - (timer / 5)`; for the
+    post-warp negative half it computes one-based `0x28 + (timer / 5)`.  8086
+    signed division truncates toward zero, matching Python int(a / b).
+    The decoded atlas is zero-based, hence the final `- 1`.
+    """
+    q = int(timer_ticks / 5)
+    one_based = 0x28 - q if timer_ticks >= 0 else 0x28 + q
+    tile = max(TELEPORT_WARP_TILES[0], min(TELEPORT_WARP_TILES[-1], one_based - 1))
+    return (TELEPORTER_BANK, tile)
+
 # The EXE actor record uses frame counter ranges 0x01..0x13 and 0x15..0x27.
 # The renderer below compresses those ranges down to the visible 4-frame tile
 # loops in SAM?01.GFX. These are source-derived from the current map code ->
@@ -83,7 +122,11 @@ WALKER_ANIMATIONS: dict[int, WalkerAnimation] = {
     0x24: WalkerAnimation(2, (40, 41, 42, 43), (40, 41, 42, 43)),
     # Additional decoded special actors from the same table.
     0x56: WalkerAnimation(12, (0, 1, 2, 3), (0, 1, 2, 3)),
-    0x58: WalkerAnimation(12, (31, 32, 33, 34), (31, 32, 33, 34)),
+    # Raw 0x58 / state 0x1F is a two-high bank-12 robot/shooter.  It does
+    # not use a mirrored single loop: the EXE keeps left frames in DS:34D6
+    # 0x01..0x13 and right frames in 0x3D..0x4F, which map to separate atlas
+    # ranges below.  multi_tile_actor_refs() draws the real composite cels.
+    0x58: WalkerAnimation(12, (28, 29, 30, 31), (16, 17, 18, 19)),
     # raw 0x63 -> object id 0x0345 / state 0x21.  The visible bank-12
     # family is 36..43: 36..39 for one horizontal direction, 40..43 for the other.
     0x63: WalkerAnimation(12, (36, 37, 38, 39), (40, 41, 42, 43)),
@@ -174,6 +217,46 @@ def state27_actor_refs(direction: int, frame_counter: int, *, walking_phase: boo
     return ((0, -1, 2, top), (0, 0, 2, 44 + frame))
 
 
+def state1f_walk_counter_start(direction: int) -> int:
+    """Return the state-0x1F / raw-0x58 DS:34D6 start value.
+
+    SAM1:0x12181..0x121A6 initializes DS:34D6 to 0x3D for right-facing
+    direction +1 and to 0x01 for left-facing direction -1.  The update branch
+    at SAM1:0x936B..0x93BC wraps those ranges while walking and
+    SAM1:0x92F2..0x9343 clamps them while stopped/open.
+    """
+    return 0x3D if direction > 0 else 0x01
+
+
+def state1f_walk_counter_next(counter: int, *, direction: int, walking_phase: bool) -> int:
+    """Advance raw 0x58 / state 0x1F frame counter using EXE ranges."""
+    start, end = (0x3D, 0x4F) if direction > 0 else (0x01, 0x13)
+    if counter < start or counter > end:
+        return start
+    counter += 1
+    if counter > end:
+        return start if walking_phase else end
+    return counter
+
+
+def state1f_frame_index(frame_counter: int, *, direction: int) -> int:
+    start = 0x3D if direction > 0 else 0x01
+    return max(0, min(3, (max(start, frame_counter) - start) // 5))
+
+
+def state1f_actor_refs(direction: int, frame_counter: int) -> tuple[tuple[int, int, int, int], ...]:
+    """Return the raw 0x58 two-high bank-12 cel refs.
+
+    ASM-backed atlas mapping: left-facing top 16..19 / bottom 20..23;
+    right-facing top 28..31 / bottom 32..35.  These are independent sprite
+    ranges, not a mirrored copy and not the old 31..38 approximation.
+    """
+    frame = state1f_frame_index(frame_counter, direction=direction)
+    if direction > 0:
+        return ((0, -1, 12, 28 + frame), (0, 0, 12, 32 + frame))
+    return ((0, -1, 12, 16 + frame), (0, 0, 12, 20 + frame))
+
+
 def state2a_dog_counter_next(counter: int, *, direction: int) -> int:
     """Advance raw 0xAE / state 0x2A frame counter.
 
@@ -255,7 +338,7 @@ def multi_tile_actor_refs(code: int, direction: int, frame_counter: int) -> tupl
     if code == 0x56:
         return ((0, -1, 12, 0 + frame), (0, 0, 12, 4 + frame))
     if code == 0x58:
-        return ((0, -1, 12, 31 + frame), (0, 0, 12, 35 + frame))
+        return state1f_actor_refs(direction, frame_counter)
     if code == 0x63:
         # Ceiling laser crawler is a one-tile actor using bank12 36..43.
         # It is handled by walker_tile(); do not draw it as a separate
