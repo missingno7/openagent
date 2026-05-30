@@ -34,12 +34,18 @@ SPECIAL_ACTOR_MODELS: dict[int, ActorSpawnModel] = {
     0x67: ActorSpawnModel(0x67, object_id=0x0177, step_px=2, behavior_state=0x04, random_initial_direction=True, timer_min=50, timer_max=99),
     0x47: ActorSpawnModel(0x47, object_id=0x017F, step_px=2, behavior_state=0x05, random_initial_direction=True, timer_min=30, timer_max=49),
     0x65: ActorSpawnModel(0x65, object_id=0x0075, step_px=2, behavior_state=0x22, random_initial_direction=True, aux_dc=3),
+    0x75: ActorSpawnModel(0x75, object_id=0x006D, step_px=2, behavior_state=0x23, random_initial_direction=True, aux_dc=3),
+    0x76: ActorSpawnModel(0x76, object_id=0x0071, step_px=0, behavior_state=0x24, timer_min=10, timer_max=10, aux_dc=10),
     0x6E: ActorSpawnModel(0x6E, object_id=0x0085, step_px=2, behavior_state=0x26, random_initial_direction=True, timer_min=30, timer_max=49, aux_dc=3),
     0x7F: ActorSpawnModel(0x7F, object_id=0x0261, step_px=2, behavior_state=0x06, random_initial_direction=True, timer_min=2, timer_max=2),
     0x52: ActorSpawnModel(0x52, object_id=0x01D0, step_px=0, behavior_state=0x0A, timer_min=55, timer_max=74),
     0x51: ActorSpawnModel(0x51, object_id=0x01D1, step_px=0, behavior_state=0x0B, timer_min=55, timer_max=74),
     0x3C: ActorSpawnModel(0x3C, object_id=0x01E7, step_px=0, behavior_state=0x0C, timer_min=55, timer_max=74),
     0x3D: ActorSpawnModel(0x3D, object_id=0x01EB, step_px=0, behavior_state=0x0D, timer_min=55, timer_max=74),
+    0x5B: ActorSpawnModel(0x5B, object_id=0x01B3, step_px=0, behavior_state=0x29),
+    0x40: ActorSpawnModel(0x40, object_id=0x0131, step_px=0, behavior_state=0x2B, timer_min=5, timer_max=5),
+    0xD4: ActorSpawnModel(0xD4, object_id=0x0135, step_px=0, behavior_state=0x2C, timer_min=2, timer_max=2),
+    0x78: ActorSpawnModel(0x78, object_id=0x0103, step_px=0, behavior_state=0x2C, timer_min=2, timer_max=2),
 }
 
 # Raw 0x5F is the bank-4 shark swimmer (bank 4 tiles 44..47 in the decoded
@@ -57,6 +63,10 @@ SHARK_SWIMMER_STATE = 0x28
 #   * 0x0353 receives the special wide dog hit-test.
 #   * 0x0321..0x0383 and 0x1389 use the large/multi-hit enemy path.
 #   * 0x0072 and 0x0065 have their own object-specific hit paths.
+#     For raw 0x24/object 0x0065 the init value DS:34DC=3 looks like
+#     the generic aux/DC hint at first sight, but state 0x27 later reuses
+#     DS:34DC as its open-helmet countdown.  It is therefore not modelled
+#     as a normal 3-HP enemy.
 #   * bank-14 guards are handled by their lower behaviour states/degrade path.
 # Static shooter/trap object ids 0x01D0/0x01D1/0x01E7/0x01EB are deliberately
 # absent: they behave as solid indestructible map actors, not enemies to kill.
@@ -72,23 +82,94 @@ def object_id_is_shootable(object_id: int) -> bool:
 # Object-specific durability hints observed so far.  The EXE often keeps these
 # in per-actor auxiliary fields/state rather than a single explicit HP table,
 # but these values prevent the port from treating every moving actor as one-shot.
+# Do not include object 0x0065 here: its apparent aux value 3 is DS:34DC,
+# which state 0x27 repurposes as an open-helmet phase timer, while damage is
+# handled by the dedicated state27 branch.
 ACTOR_HP_BY_OBJECT_ID: dict[int, int] = {
     0x0353: 3,  # bank0 two-tile dog
     0x0321: 3,
     0x0331: 3,
     0x0345: 3,
-    0x0065: 3,
     0x0075: 3,
     SHARK_SWIMMER_OBJECT_ID: 1,
 }
 
-# State 0x21 / object 0x0345 ceiling crawler fires only while active/on-screen
-# and only when the player is underneath its column.  The projectile branch uses
-# a vertical laser/spark family; in the decoded atlas this is bank 12 tiles
-# 44..47.
+# State 0x21 / object 0x0345 is the ceiling laser crawler.  The decoded
+# laser projectile/beam family is bank 2 tiles 13..15 and travels downward
+# from the crawler when the player overlaps its column.
 CEILING_CRAWLER_CODE = 0x63
-CEILING_LASER_PROJECTILE_BANK = 12
-CEILING_LASER_PROJECTILE_TILES = (44, 45, 46, 47)
+CEILING_LASER_PROJECTILE_BANK = 2
+CEILING_LASER_PROJECTILE_TILES = (13, 14, 15)
+
+
+
+# State 0x06 / object 0x0261 (raw 0x7F) is a bank-5 contact hazard/floater.
+# The dispatcher branch at SAM1:0x6864..0x6A21 probes body collision at the
+# candidate side/top+bottom points and reverses DS:34E2 on side collision; it
+# does not perform the ground/floor-ahead probe used by normal walkers.  It
+# also calls helper 0x53C4 every tick, so it should hurt on contact.
+STATE06_CONTACT_FLOATER_CODE = 0x7F
+STATE06_CONTACT_FLOATER_OBJECT_ID = 0x0261
+
+# State 0x29 / object 0x01B3 (raw 0x5B) is not a plain static money-bag
+# pickup.  At SAM1:0xB0EF..0xB596 the idle bag checks a tight player overlap;
+# on contact it searches upward to the nearest body collision, rewrites the
+# actor to object 0x026B with speed metadata 8, then the moving branch advances
+# the bag downward until collision.  A later tight overlap awards 0x1388 = 5000
+# points and rewrites the slot to an explosion/score state.
+STATE29_MONEY_BAG_CODE = 0x5B
+STATE29_MONEY_BAG_IDLE_OBJECT_ID = 0x01B3
+STATE29_MONEY_BAG_FALLING_OBJECT_ID = 0x026B
+STATE29_MONEY_BAG_SCORE = 5000
+STATE29_MONEY_BAG_FALL_STEP_PX = 4
+
+# State 0x23 / object 0x006D (raw 0x75) is a small walking contact bomb.
+# The branch at SAM1:0x9FED..0xA15E moves horizontally via the candidate X,
+# tests actor/player contact through helper 0x547C, then counts DS:34DC down
+# from 3.  On expiry it awards 1000 points, rewrites the actor to explosion
+# object 0x00AA/state 0x1389, and spawns two side projectiles 0x7D/0x7E.
+STATE23_CONTACT_BOMB_CODE = 0x75
+STATE23_CONTACT_BOMB_SCORE = 1000
+STATE23_SHRAPNEL_BANK = 1
+STATE23_SHRAPNEL_RIGHT_TILE = 38
+STATE23_SHRAPNEL_LEFT_TILE = 39
+
+# State 0x24 / object 0x0071 (raw 0x76) is a vertical up-laser emitter.
+# The branch at SAM1:0xA169..0xA236 keeps X fixed, increments DS:34DA up to
+# DS:34DC=10, checks that the player is above and horizontally centered, and
+# calls projectile helper 0x5784 with object 0x72, speed=8, direction=-1.
+STATE24_UP_LASER_CODE = 0x76
+STATE24_UP_LASER_PROJECTILE_BANK = 2
+STATE24_UP_LASER_PROJECTILE_TILES = (13, 14, 15)
+
+# State 0x27 / object 0x0065 (raw 0x24) is not a passive walker.  After its
+# 60-tick timer reaches the threshold it checks that the player is on the same
+# row and in the facing direction, then calls projectile helper 0x5784 with
+# speed=4 and object 0x033B.
+STATE27_SHOOTER_CODE = 0x24
+STATE27_PROJECTILE_BANK = 1
+STATE27_PROJECTILE_RIGHT_TILE = 38
+STATE27_PROJECTILE_LEFT_TILE = 39
+STATE27_OPEN_HELMET_SCORE = 1000
+
+# State 0x1E / object 0x0321 (raw 0x56) and state 0x1F / object
+# 0x0331 (raw 0x58) are not plain fallback walkers.  The update branch at
+# SAM1:0x8AD1..0x977A keeps them as two-high actors, applies the same
+# floor/side collision probes as the dog-like multi-cell walkers, performs
+# player-contact checks through helpers 0x53C4/0x547C, and conditionally calls
+# projectile helper 0x5784 with object 0x0339 (state 0x1E) or 0x033B
+# (state 0x1F), speed=4, direction=DS:34E2.
+STATE1E_SHOOTER_CODE = 0x56
+STATE1F_SHOOTER_CODE = 0x58
+STATE1E_PROJECTILE_OBJECT_ID = 0x0339
+STATE1F_PROJECTILE_OBJECT_ID = 0x033B
+STATE1E_FIRE_COOLDOWN_TICKS = 0x46
+STATE1E_PROJECTILE_BANK = 1
+STATE1E_PROJECTILE_RIGHT_TILE = 38
+STATE1E_PROJECTILE_LEFT_TILE = 39
+STATE1F_PROJECTILE_BANK = 1
+STATE1F_PROJECTILE_RIGHT_TILE = 38
+STATE1F_PROJECTILE_LEFT_TILE = 39
 
 BANK14_GUARD_SPEED_BY_BASE_TILE: dict[int, int] = {
     0: SPECIAL_ACTOR_MODELS[0x38].step_px,
@@ -138,6 +219,37 @@ def deterministic_direction(code: int, x: int, y: int) -> int:
     # Mirrors random(2): non-zero -> +1, zero -> -1.
     return 1 if deterministic_actor_rng(code, x, y) % 2 else -1
 
+
+
+# Decorative/special actor animation states verified from SAM1 update dispatcher.
+# State 0x2B increments DS:34D8 until DS:34DA=5, then advances DS:34D6;
+# if DS:34D6 > 0x13 it is reset to random(5)+1.  State 0x2C advances
+# DS:34D6 every tick and wraps >0x13 back to 1.  The object-0x0103
+# variant additionally calls helper 0x53C4, the same 10x16 player-contact
+# hazard path used elsewhere.
+STATE2B_ANIM_CODE = 0x40
+STATE2B_ANIM_PERIOD = 5
+STATE2C_ANIM_CODES = frozenset({0xD4, 0x78})
+STATE2C_ANIM_PERIOD = 2
+STATE2C_CONTACT_HAZARD_CODE = 0x78
+
+# Raw 0x4D writes runtime visual/object 0x0270 in mission maps.  The player
+# interaction dispatcher branch at SAM1:0xD0B1..0xD21E clears that map cell,
+# spawns an actor slot with object 0x0271/state 0x17/DS:34D6=1/DS:34D8=0x28,
+# and immediately sets the player death state unless protection flag DS:69F3 is
+# active.  The state-0x17 update at SAM1:0x7782..0x78C1 later increments
+# DS:34D6, calls helper 0x53C4 at frame 0x0B, and wraps non-0x0271 objects
+# after frame 9.  Draw timing comes from the object-family renderers:
+# 0x0270 uses floor(DS:34D6/5), 0x0271 uses floor(DS:34D6/3).
+STATE17_LANDMINE_CODE = 0x4D
+STATE17_LANDMINE_IDLE_OBJECT_ID = 0x0270
+STATE17_LANDMINE_TRIGGERED_OBJECT_ID = 0x0271
+STATE17_LANDMINE_STATE = 0x17
+STATE17_LANDMINE_PERIOD = 0x28
+STATE17_LANDMINE_IDLE_BANK = 5
+STATE17_LANDMINE_IDLE_TILES = (41, 42)
+STATE17_LANDMINE_TRIGGER_TILES = (42, 43, 44)
+STATE17_LANDMINE_DAMAGE_FRAME = 0x0B
 
 # Stationary shooter/trap actor states from the update dispatcher around
 # SAM1:0x6B74..0x6D47.  The init table gives their object ids and a

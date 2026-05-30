@@ -27,13 +27,14 @@ PLAYER_STATE_ALT_RIGHT = 0x0B
 PLAYER_STATE_ALT_LEFT = 0x0C
 PLAYER_STATE_SHOOT_RIGHT = 0x0B
 PLAYER_STATE_SHOOT_LEFT = 0x0C
-# These two states are used by the EXE when the player is moving while the
-# shot/airborne flag is active. They render as the same left/right jump-looking
-# frames in the decoded bank and are kept separate from the actual jump toggle.
+# These two states are used by the ordinary DS:6EC1 mission jump. They render
+# as the same left/right air-looking frames in the decoded bank.
 PLAYER_STATE_AIR_RIGHT = 0x0D
 PLAYER_STATE_AIR_LEFT = 0x0E
+# These are alternated by the separate DS:69F5/DS:69F6 bounce/death-style path.
 PLAYER_STATE_JUMP_RIGHT = 0x0F
 PLAYER_STATE_JUMP_LEFT = 0x10
+PLAYER_DEATH_TILES = (14, 15)
 # Backwards-compatible names used by runtime imports.
 PLAYER_STATE_FIRE_RIGHT = PLAYER_STATE_SHOOT_RIGHT
 PLAYER_STATE_FIRE_LEFT = PLAYER_STATE_SHOOT_LEFT
@@ -104,12 +105,11 @@ PLAYER_EXPLICIT_TILES: dict[int, int] = {
     # again and displayed 9/10.
     PLAYER_STATE_SHOOT_RIGHT: 10,
     PLAYER_STATE_SHOOT_LEFT: 11,
-    # 0x0D/0x0E are not shooting frames in the decoded bank; they line up with
-    # the right/left air pose. Keep them off the death frames.
+    # 0x0D/0x0E line up with the ordinary right/left air pose.
     PLAYER_STATE_AIR_RIGHT: 12,
     PLAYER_STATE_AIR_LEFT: 13,
-    # 0x0F/0x10 are alternated by the jump routine, but both directions should
-    # still resolve only to the two real jump/air tiles, never death 15/16.
+    # 0x0F/0x10 are alternated by the DS:69F5 path, but should still resolve
+    # only to the two air-looking tiles here, never death 15/16.
     PLAYER_STATE_JUMP_RIGHT: 12,
     PLAYER_STATE_JUMP_LEFT: 13,
 }
@@ -137,6 +137,61 @@ def actor_walk_counter_next(counter: int, *, direction: int) -> int:
     counter += 1
     return start if counter > end else counter
 
+
+
+def state27_walk_counter_next(counter: int, *, direction: int, walking_phase: bool) -> int:
+    """Advance raw 0x24 / state 0x27 frame counter using its EXE ranges.
+
+    Unlike the generic actors, state 0x27 uses 0x01..0x13 for left-facing
+    frames and 0xC9..0xDB for right-facing frames. During the stationary/open
+    phase the EXE clamps at the end of the range instead of wrapping; while
+    DS:34DE is non-zero it wraps back to the start.
+    """
+    start, end = (0xC9, 0xDB) if direction > 0 else (0x01, 0x13)
+    if counter < start or counter > end:
+        return start
+    counter += 1
+    if counter > end:
+        return start if walking_phase else end
+    return counter
+
+
+def state27_frame_index(frame_counter: int, *, direction: int) -> int:
+    start = 0xC9 if direction > 0 else 0x01
+    return max(0, min(3, (max(start, frame_counter) - start) // 5))
+
+
+def state27_actor_refs(direction: int, frame_counter: int, *, walking_phase: bool) -> tuple[tuple[int, int, int, int], ...]:
+    """Return the raw 0x24 two-high helmet actor cel refs.
+
+    The lower/body part walks through bank-2 tiles 44..47.  The upper helmet
+    part is not synchronized while walking: in the original game the visor stays
+    closed during DS:34DE walking time and only uses the 40..43 opening frames
+    during the stopped/vulnerable phase.
+    """
+    frame = state27_frame_index(frame_counter, direction=direction)
+    top = 40 if walking_phase else 40 + frame
+    return ((0, -1, 2, top), (0, 0, 2, 44 + frame))
+
+
+def state2a_dog_counter_next(counter: int, *, direction: int) -> int:
+    """Advance raw 0xAE / state 0x2A frame counter.
+
+    ASM SAM1:0x889C..0x88E6 uses two non-generic ranges: right-facing
+    DS:34D6 = 0x01..0x13 and left-facing DS:34D6 = 0x29..0x3B.
+    The older generic 0x15..0x27 left range made the port render only one
+    apparent frame while moving left.
+    """
+    start, end = (0x29, 0x3B) if direction < 0 else (0x01, 0x13)
+    if counter < start or counter > end:
+        return start
+    counter += 1
+    return start if counter > end else counter
+
+
+def state2a_dog_frame_index(frame_counter: int, *, direction: int) -> int:
+    start = 0x29 if direction < 0 else 0x01
+    return max(0, min(3, (max(start, frame_counter) - start) // 5))
 
 def walker_tile(code: int, *, direction: int, anim_time: float = 0.0, frame_counter: int | None = None) -> tuple[int, int] | None:
     model = WALKER_ANIMATIONS.get(code)
@@ -186,19 +241,17 @@ def multi_tile_actor_refs(code: int, direction: int, frame_counter: int) -> tupl
     """
     frame = actor_frame_index(frame_counter)
     if code == 0xAE:
-        # Bank-0 two-wide creature.  When walking right the EXE draws the pair
-        # as (0,4), (1,5), (2,6), (3,7).  Facing left mirrors the whole
-        # two-tile composite, so the tile order must be swapped before the
-        # renderer flips each 16x16 cel; otherwise the head/body halves are
-        # visibly reversed.
+        # Bank-0 two-wide dog/creature.  State 0x2A does not use the generic
+        # actor left range; left-facing frames are DS:34D6 0x29..0x3B.
+        frame = state2a_dog_frame_index(frame_counter, direction=direction)
         if direction < 0:
             return ((-1, 0, 0, 4 + frame), (0, 0, 0, frame))
         return ((-1, 0, 0, frame), (0, 0, 0, 4 + frame))
     if code == 0x24:
-        # Bank-2 helmet enemy is two tiles high.  Upper and lower halves animate
-        # together for now; the EXE state has room for the helmet opening branch
-        # and is documented as the next target.
-        return ((0, -1, 2, 40 + frame), (0, 0, 2, 44 + frame))
+        # Callers that do not know the phase get the conservative closed-helmet
+        # walking rendering.  Runtime passes the actual phase through
+        # state27_actor_refs() so the helmet only opens while stopped.
+        return state27_actor_refs(direction, frame_counter, walking_phase=True)
     if code == 0x56:
         return ((0, -1, 12, 0 + frame), (0, 0, 12, 4 + frame))
     if code == 0x58:
@@ -209,3 +262,34 @@ def multi_tile_actor_refs(code: int, direction: int, frame_counter: int) -> tupl
         # multi-tile composite.
         return None
     return None
+
+
+def state2b_tile(frame_counter: int) -> tuple[int, int]:
+    # raw 0x40 / object 0x0131 is in the decoded bank-9 animated family.
+    frame = max(1, min(0x13, frame_counter))
+    return (9, ((frame - 1) % 19) + 1)
+
+def state2c_tile(code: int, frame_counter: int) -> tuple[int, int]:
+    # State 0x2C advances DS:34D6, but the decoded sprite family is not a
+    # 19-tile run for every object.  Raw 0xD4/object 0x0135 is the small
+    # two-frame bank-9 flame/steam decoration at tiles 8..9; cycling the whole
+    # bank-9 row incorrectly showed control-room/armory graphics.  Raw 0x78 /
+    # object 0x0103 remains the bank-15 8..11 contact-hazard family.
+    frame = max(1, frame_counter)
+    if code == 0xD4:
+        return (9, 8 + ((frame - 1) // 5) % 2)
+    if code == 0x78:
+        return (15, 8 + ((frame - 1) // 5) % 4)
+    return (9, 8)
+
+def state17_landmine_tile(object_id: int, frame_counter: int) -> tuple[int, int]:
+    frame = max(1, frame_counter)
+    if object_id == 0x0271:
+        # Triggered object 0x0271 is drawn by the special branch at
+        # SAM1:0x3728..0x378E: floor(DS:34D6 / 3) is added to the object-family
+        # base.  Keep the current decoded bank-5 approximation but match the
+        # original timing instead of using a made-up four-tick cadence.
+        return (5, (42, 43, 44, 44)[min(3, frame // 3)])
+    # Idle object 0x0270 uses floor(DS:34D6 / 5) and the update branch wraps
+    # DS:34D6 after 9, so frames 1..4 and 5..9 form the two-frame blink.
+    return (5, 41 + min(1, frame // 5))

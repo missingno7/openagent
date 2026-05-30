@@ -27,23 +27,62 @@ class Tileset8:
 def decode_prographx_8x8(encrypted: bytes) -> Tileset8:
     """Decode SAM?02.GFX into 8x8 masked EGA sprites.
 
-    Camoto identifies this as tls-sagent-2k with the xor-sagent-8sprite filter.
-    Each 2048-byte bank starts with a 3-byte ProGraphx-style header, then up to
-    50 sprites.  One 8x8 sprite is 8 rows * 1 byte cell * 5 planes = 40 bytes.
+    Camoto identifies this as ``tls-sagent-2k`` with the
+    ``xor-sagent-8sprite`` filter.  It is the Secret Agent wrapper around the
+    Crystal Caves tileset handler, so every 2048-byte encrypted block decrypts
+    to a headered sub-tileset: [num_tiles, width_bytes, height], followed by
+    masked EGA byte-planar sprite data and padding.
     """
     plain = decrypt_secret_agent(encrypted, row_key_reset=2048)
     bank_size = 2048
-    sprite_size = 40
-    data_start = 3
     banks: list[list[Image.Image]] = []
     for bank_start in range(0, len(plain), bank_size):
         chunk = plain[bank_start:bank_start + bank_size]
-        if len(chunk) < data_start + sprite_size:
+        if len(chunk) < 3:
             continue
-        count = min(50, (len(chunk) - data_start) // sprite_size)
-        banks.append([_decode_masked_ega_sprite_8(chunk[data_start + i * sprite_size:data_start + (i + 1) * sprite_size]) for i in range(count)])
+        num_tiles, width_bytes, height = chunk[0], chunk[1], chunk[2]
+        if width_bytes <= 0 or height <= 0:
+            continue
+        sprite_size = width_bytes * height * 5
+        data_start = 3
+        if len(chunk) < data_start + num_tiles * sprite_size:
+            continue
+        sprites: list[Image.Image] = []
+        for i in range(num_tiles):
+            off = data_start + i * sprite_size
+            if width_bytes == 1 and height == 8:
+                sprites.append(_decode_masked_ega_sprite_8(chunk[off:off + sprite_size]))
+            else:
+                sprites.append(_decode_masked_ega_sprite_generic(chunk[off:off + sprite_size], width_bytes * 8, height, width_bytes))
+        banks.append(sprites)
     return Tileset8(banks)
 
+
+def _decode_masked_ega_sprite_generic(buf: bytes, width: int, height: int, width_bytes: int) -> Image.Image:
+    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    px = img.load()
+    i = 0
+    for y in range(height):
+        for xb in range(width_bytes):
+            if i + 5 > len(buf):
+                return img
+            opaque, blue, green, red, inten = buf[i:i + 5]
+            i += 5
+            for bit in range(8):
+                mask = 0x80 >> bit
+                if not (opaque & mask):
+                    continue
+                color = 0
+                if blue & mask:
+                    color |= 1
+                if green & mask:
+                    color |= 2
+                if red & mask:
+                    color |= 4
+                if inten & mask:
+                    color |= 8
+                px[xb * 8 + bit, y] = (*EGA_PALETTE[color], 255)
+    return img
 
 def _decode_masked_ega_sprite_8(buf: bytes) -> Image.Image:
     img = Image.new("RGBA", (8, 8), (0, 0, 0, 0))

@@ -76,7 +76,7 @@
       "add": 30
     },
     "implemented": true,
-    "runtime_note": "bank12 two-high actor, first-pass walker"
+    "runtime_note": "state 0x1E two-high bank12 shooter; projectile helper object 0x0339 speed 4; implemented pass45"
   },
   {
     "raw_code_hex": "0x58",
@@ -86,7 +86,7 @@
     "timer_period": 60,
     "timer_period_random": null,
     "implemented": true,
-    "runtime_note": "bank12 two-high actor, first-pass walker"
+    "runtime_note": "state 0x1F two-high bank12 shooter; projectile helper object 0x033B speed 4; implemented pass45"
   },
   {
     "raw_code_hex": "0x23",
@@ -109,7 +109,7 @@
       "add": 30
     },
     "implemented": true,
-    "runtime_note": "bank12 one-tile actor, first-pass walker"
+    "runtime_note": "state 0x21 ceiling crawler/laser shooter; candidate ceiling probe + under-column fire gate"
   },
   {
     "raw_code_hex": "0x65",
@@ -128,8 +128,8 @@
     "step_px": null,
     "timer_period": null,
     "timer_period_random": null,
-    "implemented": false,
-    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+    "implemented": true,
+    "runtime_note": "state 0x23 walking contact bomb, 3-tick fuse, 1000 score + side shrapnel"
   },
   {
     "raw_code_hex": "0x76",
@@ -138,8 +138,8 @@
     "step_px": null,
     "timer_period": null,
     "timer_period_random": null,
-    "implemented": false,
-    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+    "implemented": true,
+    "runtime_note": "state 0x24 stationary upward laser emitter, 10-tick charge, object 0x72 laser"
   },
   {
     "raw_code_hex": "0x6E",
@@ -162,7 +162,7 @@
     "timer_period": 60,
     "timer_period_random": null,
     "implemented": true,
-    "runtime_note": "two-high bank2 helmet actor, first-pass synchronized animation"
+    "runtime_note": "state 0x27 two-high bank2 helmet actor; walking/closed phase is invulnerable, open/stopped phase dies for 1000 points (pass47)"
   },
   {
     "raw_code_hex": "0x5B",
@@ -171,8 +171,8 @@
     "step_px": null,
     "timer_period": null,
     "timer_period_random": null,
-    "implemented": false,
-    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+    "implemented": true,
+    "runtime_note": "state 0x29 money bag actor: idle 0x01B3, triggered falling 0x026B, 5000 score"
   },
   {
     "raw_code_hex": "0x7F",
@@ -182,7 +182,7 @@
     "timer_period": 2,
     "timer_period_random": null,
     "implemented": true,
-    "runtime_note": "mirrored simple walker, bank5 8..11"
+    "runtime_note": "state 0x06 bank5 contact floater/hazard; side/body collision reversal, no floor-ahead ledge probe (pass50)"
   },
   {
     "raw_code_hex": "0x52",
@@ -283,8 +283,8 @@
     "step_px": null,
     "timer_period": null,
     "timer_period_random": null,
-    "implemented": false,
-    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+    "implemented": true,
+    "runtime_note": "state 0x2B animated special, 5-tick period, random wrap"
   },
   {
     "raw_code_hex": "0xD4",
@@ -293,8 +293,8 @@
     "step_px": null,
     "timer_period": null,
     "timer_period_random": null,
-    "implemented": false,
-    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+    "implemented": true,
+    "runtime_note": "state 0x2C animated special, wraps after 0x13"
   },
   {
     "raw_code_hex": "0x78",
@@ -303,7 +303,7 @@
     "step_px": null,
     "timer_period": null,
     "timer_period_random": null,
-    "implemented": false,
-    "runtime_note": "not yet promoted or still needs state-specific dispatcher"
+    "implemented": true,
+    "runtime_note": "state 0x2C animated contact hazard, helper 0x53C4 overlap"
   }
 ]

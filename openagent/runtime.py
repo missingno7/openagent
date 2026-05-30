@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import math
 import time
 import tkinter as tk
-from dataclasses import dataclass
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageTk
 
 from .animation import (
+    PLAYER_DEATH_TILES,
     PLAYER_FIRE_HOLD_SECONDS,
     PLAYER_STATE_FIRE_LEFT,
     PLAYER_STATE_FIRE_RIGHT,
+    PLAYER_STATE_AIR_LEFT,
+    PLAYER_STATE_AIR_RIGHT,
     PLAYER_STATE_IDLE_LEFT,
     PLAYER_STATE_IDLE_RIGHT,
-    PLAYER_STATE_JUMP_RIGHT,
-    PLAYER_STATE_JUMP_LEFT,
     PLAYER_STATE_WALK_LEFT,
     PLAYER_STATE_WALK_RIGHT,
     PLAYER_WALK_COUNTER_MAX,
@@ -23,12 +24,19 @@ from .animation import (
     PLAYER_WALK_COUNTER_STEP,
     player_tile,
     actor_walk_counter_next,
+    state27_walk_counter_next,
+    state27_actor_refs,
+    state2a_dog_counter_next,
     walker_tile,
     bank14_guard_tile,
     satellite_tile,
     multi_tile_actor_refs,
+    state2b_tile,
+    state2c_tile,
+    state17_landmine_tile,
 )
 from .collision import PLAYER_COLLISION_BOTTOM, PLAYER_DRAW_H, PLAYER_DRAW_W, player_body_probes
+from .hud import HUDMixin, STATUS_BAR_H
 from .entities import BeamTrap, Explosion, LevelEntities, MovingPlatform, Projectile, ScorePopup, extract_level_entities, Enemy, PushableBarrel
 from .exe_actor_mechanics import (
     BANK14_GUARD_BEHAVIOUR_BY_BASE_TILE,
@@ -46,10 +54,48 @@ from .exe_actor_mechanics import (
     STATIONARY_SHOOTER_SPAWN_X_OFFSET,
     CEILING_LASER_PROJECTILE_BANK,
     CEILING_LASER_PROJECTILE_TILES,
+    STATE27_PROJECTILE_BANK,
+    STATE27_PROJECTILE_RIGHT_TILE,
+    STATE27_PROJECTILE_LEFT_TILE,
+    STATE27_OPEN_HELMET_SCORE,
+    STATE1E_SHOOTER_CODE,
+    STATE1F_SHOOTER_CODE,
+    STATE1E_PROJECTILE_BANK,
+    STATE1E_PROJECTILE_RIGHT_TILE,
+    STATE1E_PROJECTILE_LEFT_TILE,
+    STATE1F_PROJECTILE_BANK,
+    STATE1F_PROJECTILE_RIGHT_TILE,
+    STATE1F_PROJECTILE_LEFT_TILE,
+    STATE1E_FIRE_COOLDOWN_TICKS,
+    STATE23_CONTACT_BOMB_CODE,
+    STATE23_CONTACT_BOMB_SCORE,
+    STATE23_SHRAPNEL_BANK,
+    STATE23_SHRAPNEL_RIGHT_TILE,
+    STATE23_SHRAPNEL_LEFT_TILE,
+    STATE24_UP_LASER_CODE,
+    STATE24_UP_LASER_PROJECTILE_BANK,
+    STATE24_UP_LASER_PROJECTILE_TILES,
+    STATE2B_ANIM_CODE,
+    STATE2B_ANIM_PERIOD,
+    STATE2C_ANIM_PERIOD,
+    STATE2C_CONTACT_HAZARD_CODE,
+    STATE29_MONEY_BAG_IDLE_OBJECT_ID,
+    STATE29_MONEY_BAG_FALLING_OBJECT_ID,
+    STATE29_MONEY_BAG_SCORE,
+    STATE29_MONEY_BAG_FALL_STEP_PX,
+    STATE17_LANDMINE_CODE,
+    STATE17_LANDMINE_IDLE_OBJECT_ID,
+    STATE17_LANDMINE_TRIGGERED_OBJECT_ID,
+    STATE17_LANDMINE_DAMAGE_FRAME,
 )
 from .exe_runtime_collision import runtime_cell_writes_for_code
 from .level_model import build_runtime_collision_grid, cells_at, codes_at, iter_map_cells
 from .loader import Campaign, ensure_editor_importable, load_campaign
+from .player import Player
+from .player_motion import advance_fall_tick, advance_jump_tick, horizontal_step_for_hold_ticks
+from .player_lifecycle import PlayerLifecycleMixin
+from .combat import CombatMixin
+from .overworld import OverworldMixin
 from .semantics import (
     ACTIVE_HIDDEN_PLATFORM_COLLISION_CODE,
     BANK14_GUARD_CODE_BY_BASE_TILE,
@@ -58,13 +104,17 @@ from .semantics import (
     BANK14_RIP_TILE,
     GLASSES_CODE,
     HIDDEN_PLATFORM_CODE,
+    LASER_FIELD_CODE,
+    LASER_COMPUTER_CODE,
+    FLOPPY_DISK_CODE,
+    DYNAMITE_CODE,
+    EXIT_DOOR_CODE,
+    TELEPORTER_CODE,
     MISSION_PLAYER_START_CODE,
-    WORLD_BLOCKED_CODES,
-    WORLD_ENTRANCE_CODES,
-    WORLD_PLAYER_CODE,
     door_unlocked_by,
     is_collectible_code,
     is_door_code,
+    is_exit_door_code,
     is_dynamic_mission_code,
     is_mission_code_body_solid,
     is_mission_code_floor_solid,
@@ -77,11 +127,16 @@ from .semantics import (
 )
 from .sound import (
     SOUND_ENEMY_DEATH,
+    SOUND_EXIT_DYNAMITE,
+    SOUND_FALLING_BAG_DROP,
+    SOUND_JUMP,
     SOUND_FIRE,
     SOUND_HURT,
     SOUND_NO_AMMO,
+    SOUND_PLAYER_DEATH,
     SOUND_PICKUP,
     SOUND_SCORE_1000,
+    SOUND_TELEPORT,
     SoundPlayer,
 )
 
@@ -92,65 +147,29 @@ from secret_agent_editor.constants import LEVEL_H, LEVEL_W, ROW_BYTES, TILE
 from secret_agent_editor.render import SecretAgentRenderer
 
 
-GAME_VIEW_W = 320
-GAME_VIEW_H = 200
-ACTIVE_VIEW_W = 320
-ACTIVE_VIEW_H = 200
-DEFAULT_ZOOM = 2
-MIN_ZOOM = 1
-MAX_ZOOM = 6
-HUD_H = 54
-PLAYER_W = PLAYER_DRAW_W
-PLAYER_H = PLAYER_DRAW_H
-# The EXE horizontal path calls routine 0x532D to choose DS:6820 and then adds
-# that integer pixel step to DS:34EE. The game logic is paced like a DOS timer
-# tick, not like a 60 Hz modern render loop; running these pixel steps at 60 Hz
-# made the player much too fast.
-DOS_TICK_HZ = 18.2065
-WORLD_MOVE_SPEED = 72.0
-# EXE routine 0x532D accelerates horizontal movement by selecting integer
-# DS:6820 steps.  The normal path is 1 px/tick for ticks 1..2, 2 px/tick at
-# tick 3, 4 px/tick for ticks 4..6, then 4 + DS:69A4 afterwards.
-PLAYER_STEP_RAMP = ((1, 2, 1), (3, 3, 2), (4, 6, 4), (7, 1000, 8))
-# The EXE does not have a separate continuous velocity/gravity model.  Both
-# jump ascent and falling use the same byte table at DS:34AF.  Routine BC0E
-# starts a jump by setting DS:6EC1=1 and DS:34EA=0.  While DS:6EC1 is set,
-# each tick increments DS:34EA and moves the player upward by -table[34EA].
-# At DS:34EA == 0x0A it clears DS:6EC1 and leaves DS:34EA at 9, so the next
-# fall tick resumes at table[10].  Routine B8B3 then increments DS:34EA up to
-# 0x13 and moves the player downward by +table[34EA].
-JUMP_ASCENT_END_COUNTER = 0x0A
-FALL_COUNTER_MAX = 0x13
-PLAYER_VERTICAL_STEP_TABLE = (
-    0,
-    8, 8, 8, 4, 4, 2, 2, 2, 1, 1, 2, 2, 2, 4, 4, 8, 8, 8, 8,
+from .game_constants import (
+    ACTIVE_VIEW_H,
+    ACTIVE_VIEW_W,
+    DEFAULT_ZOOM,
+    DOS_TICK_HZ,
+    FALL_COUNTER_MAX,
+    GAME_VIEW_H,
+    GAME_VIEW_W,
+    GROUND_EPSILON,
+    HUD_H,
+    JUMP_ASCENT_END_COUNTER,
+    MAX_AMMO,
+    MAX_ZOOM,
+    MIN_ZOOM,
+    PLAYER_H,
+    PLAYER_VERTICAL_COUNTER_INITIAL,
+    PLAYER_VERTICAL_STEP_TABLE,
+    PLAYER_W,
+    STARTING_AMMO,
+    WORLD_MOVE_SPEED,
 )
-GROUND_EPSILON = 0.35
 
-
-@dataclass
-class Player:
-    x: float = 32.0
-    y: float = 32.0
-    vx: float = 0.0
-    vy: float = 0.0
-    grounded: bool = False
-    facing: int = 1
-    walk_time: float = 0.0
-    walk_counter: int = PLAYER_WALK_COUNTER_START
-    anim_state: int = PLAYER_STATE_IDLE_RIGHT
-    firing_time: float = 0.0
-    fire_cooldown: float = 0.0
-    fire_held: bool = False
-    fire_pose_active: bool = False
-    # Mirrors EXE DS:6EC1.  The vertical counter itself is fall_ticks/DS:34EA.
-    jump_anim_timer: int = 0
-    fall_ticks: int = 0
-    move_hold_ticks: int = 0
-    last_move_dir: int = 0
-
-
-class OpenAgentApp:
+class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
     def __init__(self, campaign: Campaign, *, episode: int = 1, level: int = 0, zoom: int = DEFAULT_ZOOM) -> None:
         self.campaign = campaign
         self.episode_numbers = campaign.episode_numbers
@@ -164,7 +183,7 @@ class OpenAgentApp:
         self.show_unknown = False
         self.zoom = max(MIN_ZOOM, min(MAX_ZOOM, int(zoom)))
         self.canvas_w = GAME_VIEW_W * self.zoom
-        self.canvas_h = GAME_VIEW_H * self.zoom + HUD_H
+        self.canvas_h = GAME_VIEW_H * self.zoom
         self.level_image: Image.Image | None = None
         self.foreground_image: Image.Image | None = None
         self.level_photo: ImageTk.PhotoImage | None = None
@@ -174,11 +193,39 @@ class OpenAgentApp:
         self._ignore_barrel_collision_ticks = 0
         self.collected_cells: set[tuple[int, int, int, str]] = set()
         self.opened_doors: set[tuple[int, int, int, str]] = set()
+        # Raw 0x71 exit doors do not disappear after the dynamite blast.
+        # ASM state 0x16 scans runtime cells and rewrites only the lower
+        # visual 0x027D to 0x027E. Keep these separate from generic opened
+        # key doors, which are removed from the static map.
+        self.opened_exit_doors: set[tuple[int, int, int, str]] = set()
         self.owned_keys: set[int] = set()
         self.score = 0
-        self.ammo = 0
+        self.ammo = STARTING_AMMO
         self.hurt_flash = 0.0
+        # SAM1 initialises DS:6A40 to 3.  The generic hurt helper decrements
+        # it and starts a short invulnerability/knockback phase; several hard
+        # hazards skip that helper and set the death flag directly.
+        self.lives = 3
+        self.player_dead_timer = 0
+        self.player_death_frame_counter = 0
         self.has_glasses = False
+        self.has_floppy_disk = False
+        self.has_dynamite = False
+        # Raw 0x71 exit door / runtime visual 0x027D.  When dynamite is used,
+        # the EXE spawns object 0x027B/state 0x16 with DS:34D8=0x28 before
+        # the 0x027E/open-exit path can run.  Keep a per-source-cell countdown.
+        self.exit_door_blast_timers: dict[tuple[int, int, int, str], int] = {}
+        self.level_exit_pending = False
+        self.laser_field_deactivated = False
+        self.teleport_active = False
+        self.teleport_timer_ticks = 0
+        self.teleport_target: tuple[float, float] | None = None
+        self.teleport_warped = False
+        self.teleport_release_cell: tuple[int, int, str] | None = None
+        self._teleporter_cells_cache: list | None = None
+        self._laser_computer_last_warn_key: tuple[int, int, int, str] | None = None
+        self._laser_field_source_keys_cache: set[tuple[int, int, int, str]] | None = None
+        self._dynamic_source_keys_cache: set[tuple[int, int, int, str]] | None = None
         self._logic_accum = 0.0
         self._entity_accum = 0.0
         self._collision_grid_cache = None
@@ -234,6 +281,18 @@ class OpenAgentApp:
 
     def on_key_press(self, event: tk.Event) -> None:
         key = event.keysym
+        # Keyboard ISR SAM1:0x0079..0x0101 makes opposing movement flags
+        # mutually exclusive at press time. Tk otherwise keeps both keysyms in
+        # the set until their individual release events arrive, briefly turning
+        # a direction change into "no movement" and resetting DS:681E.
+        if key in {"Left", "a", "A"}:
+            self.keys.difference_update({"Right", "d", "D"})
+        elif key in {"Right", "d", "D"}:
+            self.keys.difference_update({"Left", "a", "A"})
+        elif key in {"Up", "w", "W"}:
+            self.keys.difference_update({"Down", "s", "S"})
+        elif key in {"Down", "s", "S"}:
+            self.keys.difference_update({"Up", "w", "W"})
         self.keys.add(key)
         if key in {"Escape"}:
             self.close()
@@ -279,7 +338,7 @@ class OpenAgentApp:
         self.zoom = max(MIN_ZOOM, min(MAX_ZOOM, self.zoom + delta))
         if self.zoom != old:
             view_w, view_h = self.viewport_size()
-            self.root.geometry(f"{view_w * self.zoom}x{view_h * self.zoom + HUD_H}")
+            self.root.geometry(f"{view_w * self.zoom}x{view_h * self.zoom}")
             self.draw()
 
     def viewport_size(self) -> tuple[int, int]:
@@ -287,7 +346,7 @@ class OpenAgentApp:
         # logical pixels.  The default 320x200 at 2x mirrors the game viewport,
         # while resizing the window shows a larger/smaller camera crop.
         logical_w = max(160, self.canvas_w // max(1, self.zoom))
-        logical_h = max(100, (self.canvas_h - HUD_H) // max(1, self.zoom))
+        logical_h = max(STATUS_BAR_H + 80, self.canvas_h // max(1, self.zoom))
         return logical_w, logical_h
 
     def change_episode(self, delta: int) -> None:
@@ -301,20 +360,34 @@ class OpenAgentApp:
         self.load_level(reset_player=True)
 
     def load_level(self, *, reset_player: bool) -> None:
+        self.teleport_release_cell = None
         self.entities = LevelEntities([], [], [], [], [], [], [], [], []) if self.is_world_map else extract_level_entities(self.episode.levels[self.level_index])
         self._ignore_barrel_collision = None
         self._ignore_barrel_collision_ticks = 0
         if reset_player and not self.is_world_map:
             self.collected_cells.clear()
             self.opened_doors.clear()
+            self.opened_exit_doors.clear()
             self.owned_keys.clear()
             self.score = 0
-            self.ammo = 0
+            self.ammo = STARTING_AMMO
+            self.lives = 3
+            self.player_dead_timer = 0
             self.hurt_flash = 0.0
             self.has_glasses = False
+            self.has_floppy_disk = False
+            self.has_dynamite = False
+            self.exit_door_blast_timers.clear()
+            self.level_exit_pending = False
+            self.laser_field_deactivated = False
+            self.reset_teleport_state()
+            self._laser_computer_last_warn_key = None
+            self._laser_field_source_keys_cache = None
+            self._dynamic_source_keys_cache = None
             self.anim_ticks = 0
         if reset_player:
             if self.is_world_map:
+                self.reset_teleport_state()
                 spawn = self.last_world_position or self.find_world_spawn()
                 self.player = Player(spawn[0], spawn[1])
             else:
@@ -330,14 +403,21 @@ class OpenAgentApp:
         self._collision_grid_cache_key = None
         self._level_image_phase = None
         self.foreground_image = None
+        self._teleporter_cells_cache = None
         self.render_level_image_for_phase(self.current_tile_anim_tick())
 
     def current_tile_anim_tick(self) -> int:
         # Background codes 0x35..0x37 are static; only specific runtime draw
-        # tiles have animation branches.  Keep the clock on the DOS tick counter
-        # because the EXE selects animated graphics from global draw/timer state,
-        # not from the modern Tk redraw cadence.
-        return self.anim_ticks
+        # tiles have animation branches.  Do not use the raw DOS tick as the
+        # static-image cache key: that forces a full level rerender every tick.
+        # Encode only the phases that can actually change a baked tile.
+        satellite_phase = (self.anim_ticks // 3) % 4
+        beam_core_phase = (self.anim_ticks // 4) % 2
+        # Raw 0x82 laser fields use the same 4-tick blink cadence while they
+        # exist.  Once disabled they are permanently skipped and this phase no
+        # longer causes redraw churn.
+        laser_phase = beam_core_phase if not self.laser_field_deactivated else 0
+        return (satellite_phase << 4) | (beam_core_phase << 1) | laser_phase
 
     def render_level_image_for_phase(self, anim_tick: int) -> None:
         renderer = SecretAgentRenderer(self.episode)
@@ -351,7 +431,9 @@ class OpenAgentApp:
             skip_codes = {code for code in range(256) if is_dynamic_mission_code(code)}
             if not self.has_glasses:
                 skip_codes.add(HIDDEN_PLATFORM_CODE)
-            skip_cells = set(self.collected_cells) | set(self.opened_doors)
+            skip_cells = set(self.collected_cells) | set(self.opened_doors) | set(self.opened_exit_doors)
+            if self.laser_field_deactivated or not self.laser_field_visible():
+                skip_cells |= self.laser_field_source_keys()
         def is_static_front_cell(_x: int, _y: int, code: int, layer: str) -> bool:
             if code in (0, 0x20):
                 return False
@@ -396,7 +478,30 @@ class OpenAgentApp:
                 transparent_base=True,
                 cell_filter=is_static_front_cell,
             )
+            self.draw_open_exit_door_overlays()
         self._level_image_phase = anim_tick
+
+    def draw_open_exit_door_overlays(self) -> None:
+        """Draw the post-dynamite exit door state from the real 16x16 art.
+
+        The original state-0x16 branch does not delete the door footprint.  It
+        rewrites the lower runtime cell visual 0x027D to 0x027E, and rewrites
+        the upper runtime cell from foreground visual 0x0279 into background/
+        layer-B visual 0x027A.  Both cells have their collision byte cleared.
+        In the decoded bank-5 art this is the two-tile broken/open door:
+        top tile 33 and bottom tile 37.
+        """
+        if self.foreground_image is None or not self.opened_exit_doors:
+            return
+        top = self.episode.tiles16.get(5, 33)
+        bottom = self.episode.tiles16.get(5, 37)
+        if top is None or bottom is None:
+            return
+        for x, y, _code, _layer in self.opened_exit_doors:
+            if 0 <= x < LEVEL_W and 0 <= y - 1 < LEVEL_H:
+                self.foreground_image.alpha_composite(top, (x * TILE, (y - 1) * TILE))
+            if 0 <= x < LEVEL_W and 0 <= y < LEVEL_H:
+                self.foreground_image.alpha_composite(bottom, (x * TILE, y * TILE))
 
     def find_spawn(self) -> tuple[float, float]:
         info = self.episode.levels[self.level_index]
@@ -409,20 +514,6 @@ class OpenAgentApp:
                     return float(x * TILE + 2), float(y * TILE + 1)
         return 32.0, 32.0
 
-    def find_world_spawn(self) -> tuple[float, float]:
-        info = self.episode.levels[0]
-        for cell in iter_map_cells(info):
-            if cell.code == WORLD_PLAYER_CODE:
-                return float(cell.x * TILE + 2), float(cell.y * TILE + 1)
-        return 32.0, 32.0
-
-    def world_entrances(self) -> list[tuple[int, int, int]]:
-        entrances = []
-        for cell in iter_map_cells(self.episode.levels[0]):
-            if cell.code in WORLD_ENTRANCE_CODES:
-                entrances.append((cell.x, cell.y, len(entrances) + 1))
-        return entrances
-
     def iter_visual_codes(self, level_index: int):
         for cell in iter_map_cells(self.episode.levels[level_index]):
             yield cell.x, cell.y, cell.code
@@ -431,75 +522,159 @@ class OpenAgentApp:
         now = time.perf_counter()
         dt = min(now - self.last_tick, 1 / 20)
         self.last_tick = now
-        if not self.is_world_map:
+        if self.player_dead_timer > 0:
+            # DS:69F5/DS:69F6 death state keeps the actor draw path alive while
+            # the countdown runs; the original alternates the player death cels
+            # instead of freezing the whole game on the last normal frame.
+            self.player_death_frame_counter += 1
+            self.player_dead_timer -= 1
+            if self.player_dead_timer <= 0:
+                self.respawn_after_death()
+        elif not self.is_world_map:
             self.update_barrel_overlap_state()
-        if self.is_world_map:
-            self.update_world_player(dt)
-        else:
-            self.update_entities(dt)
-            self.update_player(dt)
-            self.update_player_interactions(dt)
+            self.update_exit_door_blasts()
+        if self.player_dead_timer <= 0:
+            if self.is_world_map:
+                self.update_world_player(dt)
+            else:
+                self.update_entities(dt)
+                self.update_player(dt)
+                self.update_player_interactions(dt)
         self.draw()
         self.root.after(16, self.tick)
 
+    def reset_teleport_state(self) -> None:
+        self.teleport_active = False
+        self.teleport_timer_ticks = 0
+        self.teleport_target = None
+        self.teleport_warped = False
+
+    def teleporter_cells(self):
+        if self._teleporter_cells_cache is None:
+            info = self.episode.levels[self.level_index]
+            self._teleporter_cells_cache = [cell for cell in iter_map_cells(info) if cell.code == TELEPORTER_CODE]
+            self._teleporter_cells_cache.sort(key=lambda cell: (cell.y, cell.x, cell.layer))
+        return list(self._teleporter_cells_cache)
+
+    def mission_player_body_clear_at(self, x: float, y: float) -> bool:
+        old_x, old_y = self.player.x, self.player.y
+        self.player.x, self.player.y = x, y
+        try:
+            return not self.player_collides()
+        finally:
+            self.player.x, self.player.y = old_x, old_y
+
+    def world_player_body_clear_at(self, x: float, y: float) -> bool:
+        old_x, old_y = self.player.x, self.player.y
+        self.player.x, self.player.y = x, y
+        try:
+            return not self.world_player_blocked()
+        finally:
+            self.player.x, self.player.y = old_x, old_y
+
+    def player_centered_on_teleporter(self, cell) -> bool:
+        # ASM dispatcher compares the active runtime visual 0x00B7 and requires
+        # the player coordinate to be very close to the tile-aligned pad before
+        # setting DS:69E0.  Keep a small tolerance so keyboard/controller motion
+        # can actually land on the same DOS condition.
+        p = self.player
+        center_x = p.x + PLAYER_W / 2
+        center_y = p.y + PLAYER_H / 2
+        pad_cx = cell.x * TILE + TILE / 2
+        pad_cy = cell.y * TILE + TILE / 2
+        return abs(center_x - pad_cx) <= 8 and abs(center_y - pad_cy) <= 12
+
+    def update_teleport_release_gate(self) -> None:
+        # The EXE keeps DS:69E0 non-zero throughout the warp and the input/warp
+        # state does not immediately re-enter the dispatcher on the destination
+        # pad.  Mirror that behaviour explicitly: after a warp, require the
+        # player to step off the destination teleporter before another touch can
+        # arm.  This prevents an endless A<->B ping-pong while standing still.
+        if self.teleport_release_cell is None:
+            return
+        for cell in self.teleporter_cells():
+            if (cell.x, cell.y, cell.layer) == self.teleport_release_cell:
+                if self.player_centered_on_teleporter(cell):
+                    return
+                break
+        self.teleport_release_cell = None
+
+    def find_partner_teleporter(self, source_cell):
+        for cell in self.teleporter_cells():
+            if (cell.x, cell.y, cell.layer) != (source_cell.x, source_cell.y, source_cell.layer):
+                return cell
+        return None
+
+    def choose_teleport_target_position(self, target_cell) -> tuple[float, float]:
+        # EXE stores ((col-1)<<4, (row-1)<<4), then nudges X by +/-3 based on a
+        # body-collision probe at the destination.  The decoded map model uses
+        # zero-based cell coordinates, so target_cell.x/y already correspond to
+        # the final pixel cell origin.
+        base_x = float(target_cell.x * TILE)
+        base_y = float(target_cell.y * TILE)
+        candidates = [(base_x - 3, base_y), (base_x + 3, base_y), (base_x, base_y)]
+        clear = self.world_player_body_clear_at if self.is_world_map else self.mission_player_body_clear_at
+        for x, y in candidates:
+            if 0 <= x <= LEVEL_W * TILE - PLAYER_W and 0 <= y <= LEVEL_H * TILE - PLAYER_H and clear(x, y):
+                return x, y
+        return base_x, base_y
+
+    def start_teleport(self, source_cell, target_cell) -> None:
+        self.teleport_active = True
+        self.teleport_timer_ticks = 0x13
+        self.teleport_target = self.choose_teleport_target_position(target_cell)
+        self.teleport_release_cell = (target_cell.x, target_cell.y, target_cell.layer)
+        self.teleport_warped = False
+        self.player.vx = 0.0
+        self.player.vy = 0.0
+        self.player.move_hold_ticks = 0
+        self.player.walk_time = 0.0
+        self.play_sound(SOUND_TELEPORT)
+
+    def check_teleporter_touch(self) -> None:
+        self.update_teleport_release_gate()
+        if self.teleport_active or self.teleport_release_cell is not None:
+            return
+        for cell in self.teleporter_cells():
+            if not self.player_centered_on_teleporter(cell):
+                continue
+            target = self.find_partner_teleporter(cell)
+            if target is None:
+                return
+            self.start_teleport(cell, target)
+            return
+
+    def update_teleport_tick(self) -> bool:
+        if not self.teleport_active:
+            return False
+        self.teleport_timer_ticks -= 1
+        if not self.teleport_warped and self.teleport_timer_ticks <= 0 and self.teleport_target is not None:
+            self.player.x, self.player.y = self.teleport_target
+            self.player.vx = 0.0
+            self.player.vy = 0.0
+            self.player.grounded = False
+            self.player.jump_anim_timer = 0
+            self.player.fall_ticks = PLAYER_VERTICAL_COUNTER_INITIAL
+            self.teleport_warped = True
+            if self.is_world_map:
+                self.last_world_position = (self.player.x, self.player.y)
+        if self.teleport_timer_ticks <= -0x13:
+            self.reset_teleport_state()
+        return True
+
     def update_world_player(self, dt: float) -> None:
         p = self.player
+        if self.update_teleport_tick():
+            self.last_world_position = (p.x, p.y)
+            return
         left = any(k in self.keys for k in ("Left", "a", "A"))
         right = any(k in self.keys for k in ("Right", "d", "D"))
         up = any(k in self.keys for k in ("Up", "w", "W"))
         down = any(k in self.keys for k in ("Down", "s", "S"))
         self.move_world_axis((right - left) * WORLD_MOVE_SPEED * dt, 0.0)
         self.move_world_axis(0.0, (down - up) * WORLD_MOVE_SPEED * dt)
+        self.check_teleporter_touch()
         self.last_world_position = (p.x, p.y)
-
-    def move_world_axis(self, dx: float, dy: float) -> None:
-        p = self.player
-        p.x += dx
-        p.y += dy
-        p.x = min(max(p.x, 0), LEVEL_W * TILE - PLAYER_W)
-        p.y = min(max(p.y, 0), LEVEL_H * TILE - PLAYER_H)
-        if not self.collision_enabled:
-            return
-
-        if self.world_player_blocked():
-            step_x = -1 if dx > 0 else 1 if dx < 0 else 0
-            step_y = -1 if dy > 0 else 1 if dy < 0 else 0
-            while self.world_player_blocked():
-                p.x += step_x
-                p.y += step_y
-
-    def world_player_blocked(self) -> bool:
-        p = self.player
-        probes = [
-            (p.x + 2, p.y + 2),
-            (p.x + PLAYER_W - 3, p.y + 2),
-            (p.x + 2, p.y + PLAYER_H - 3),
-            (p.x + PLAYER_W - 3, p.y + PLAYER_H - 3),
-        ]
-        return any(self.world_cell_blocked(int(x) // TILE, int(y) // TILE) for x, y in probes)
-
-    def world_cell_blocked(self, x: int, y: int) -> bool:
-        if x < 0 or y < 0 or x >= LEVEL_W or y >= LEVEL_H:
-            return True
-        info = self.episode.levels[0]
-        cell_codes = [code for code in codes_at(info, x, y) if code not in (0, 0x20, ord("*"))]
-        if not cell_codes:
-            return False
-        return any(code in WORLD_BLOCKED_CODES for code in cell_codes)
-
-    def try_enter_world_level(self) -> None:
-        p = self.player
-        center_x = p.x + PLAYER_W / 2
-        center_y = p.y + PLAYER_H / 2
-        best: tuple[float, int] | None = None
-        for x, y, level in self.world_entrances():
-            dist = abs(center_x - (x * TILE + TILE / 2)) + abs(center_y - (y * TILE + TILE / 2))
-            if dist <= 20 and (best is None or dist < best[0]):
-                best = (dist, level)
-        if best is not None:
-            self.last_world_position = (p.x, p.y)
-            self.level_index = best[1]
-            self.load_level(reset_player=True)
 
     def update_player(self, dt: float) -> None:
         # Keep the mission player on DOS-like fixed ticks.  The previous
@@ -511,15 +686,13 @@ class OpenAgentApp:
             self._logic_accum -= 1.0 / DOS_TICK_HZ
             self.update_player_tick()
 
-    @staticmethod
-    def ramp_value(ticks: int, ramp: tuple[tuple[int, int, int], ...]) -> int:
-        for start, end, value in ramp:
-            if start <= ticks <= end:
-                return value
-        return ramp[-1][2]
-
     def update_player_tick(self) -> None:
         p = self.player
+        if self.update_teleport_tick():
+            p.move_hold_ticks = 0
+            p.walk_time = 0.0
+            p.walk_counter = PLAYER_WALK_COUNTER_START
+            return
         left = any(k in self.keys for k in ("Left", "a", "A"))
         right = any(k in self.keys for k in ("Right", "d", "D"))
         jump = "space" in self.keys
@@ -529,8 +702,6 @@ class OpenAgentApp:
         moving = move_dir != 0
         if moving:
             p.facing = 1 if move_dir > 0 else -1
-            if move_dir != p.last_move_dir:
-                p.move_hold_ticks = 0
             p.last_move_dir = move_dir
             p.move_hold_ticks += 1
             p.walk_counter += PLAYER_WALK_COUNTER_STEP
@@ -557,35 +728,38 @@ class OpenAgentApp:
         p.fire_held = bool(fire)
 
         if moving:
-            self.move_axis_pixels(move_dir * self.ramp_value(p.move_hold_ticks, PLAYER_STEP_RAMP), 0)
+            blocked = self.move_player_horizontal_tick(move_dir * horizontal_step_for_hold_ticks(p.move_hold_ticks))
+            if blocked:
+                # The full-step collision probe at SAM1:0xB7D9 resets DS:681E
+                # once a blocked horizontal move is detected.
+                p.move_hold_ticks = 0
 
-        self.refresh_grounded_state()
-        if jump and p.grounded and p.jump_anim_timer <= 0:
-            p.grounded = False
-            p.fall_ticks = 0
-            p.jump_anim_timer = 1
+        # SAM1:0xBC0E first calls the B8B3 fall pass whenever DS:6EC1 is clear.
+        # This also runs while standing: landing does not clear DS:34EA, so a
+        # later ledge fall starts from the capped terminal table index.
+        if p.jump_anim_timer <= 0:
+            p.fall_ticks, fall_step = advance_fall_tick(p.fall_ticks)
+            self.move_player_fall_tick(fall_step)
+            if jump and p.grounded:
+                p.grounded = False
+                p.fall_ticks = 0
+                p.jump_anim_timer = 1
+                # SAM1:0xBCE4 pushes sound 0x01 immediately before setting
+                # DS:6EC1=1 and DS:34EA=0 for the table-driven jump phase.
+                self.play_sound(SOUND_JUMP)
 
         if p.jump_anim_timer > 0:
             # EXE DS:6EC1 jump phase.  Use the same DS:34AF table as falling,
             # but subtract the displacement from Y.  At counter 0x0A the EXE
             # clears DS:6EC1 and keeps DS:34EA at 9, making the next fall tick
             # use table[10] rather than restarting from a fast 8px step.
-            p.fall_ticks = min(FALL_COUNTER_MAX, p.fall_ticks + 1)
-            if p.fall_ticks == JUMP_ASCENT_END_COUNTER:
-                p.jump_anim_timer = 0
-                p.fall_ticks = JUMP_ASCENT_END_COUNTER - 1
-            elif p.fall_ticks < len(PLAYER_VERTICAL_STEP_TABLE):
-                blocked = self.move_axis_pixels(0, -PLAYER_VERTICAL_STEP_TABLE[p.fall_ticks])
+            p.fall_ticks, jump_active, jump_step = advance_jump_tick(p.fall_ticks)
+            p.jump_anim_timer = int(jump_active)
+            if jump_step:
+                blocked = self.move_player_upward_tick(jump_step)
                 if blocked:
                     p.jump_anim_timer = 0
                     p.fall_ticks = JUMP_ASCENT_END_COUNTER - 1
-        else:
-            if not p.grounded:
-                p.fall_ticks = min(FALL_COUNTER_MAX, p.fall_ticks + 1)
-                fall_step = PLAYER_VERTICAL_STEP_TABLE[p.fall_ticks]
-                self.move_axis_pixels(0, fall_step)
-
-        self.refresh_grounded_state()
         self.update_player_anim_state(moving=moving)
 
         max_x = LEVEL_W * TILE - PLAYER_W
@@ -596,7 +770,7 @@ class OpenAgentApp:
             p.vy = 0
             p.grounded = True
             p.jump_anim_timer = 0
-            p.fall_ticks = 0
+            p.fall_ticks = FALL_COUNTER_MAX
             self.update_player_anim_state(moving=moving)
 
     def update_entities(self, dt: float) -> None:
@@ -642,8 +816,31 @@ class OpenAgentApp:
 
         for enemy in self.entities.enemies:
             enemy.anim_time += dt
+            if enemy.hit_flash_ticks > 0:
+                enemy.hit_flash_ticks -= 1
             if enemy.is_rip:
                 continue
+            if enemy.kind == "state29_money_bag":
+                # State 0x29 / raw 0x5B: idle object 0x01B3 is a trigger.
+                # A tight player overlap rewrites the actor to falling object
+                # 0x026B.  The moving branch advances down in 4px chunks until
+                # collision, and a later tight overlap awards 0x1388 points.
+                if enemy.object_id == STATE29_MONEY_BAG_IDLE_OBJECT_ID:
+                    if self.money_bag_tight_overlap(enemy):
+                        self.arm_money_bag_drop(enemy)
+                    continue
+                if enemy.object_id == STATE29_MONEY_BAG_FALLING_OBJECT_ID:
+                    if self.money_bag_tight_overlap(enemy):
+                        self.collect_money_bag_actor(enemy)
+                        continue
+                    old_y = enemy.y
+                    enemy.y += STATE29_MONEY_BAG_FALL_STEP_PX
+                    if self.enemy_collides(enemy) or enemy.y + TILE > LEVEL_H * TILE:
+                        enemy.y = old_y
+                        # The EXE keeps drawing/clearing this actor after the
+                        # blocked branch; stopping it prevents tunnelling while
+                        # preserving the pickup overlap.
+                    continue
             if enemy.kind == "stationary_shooter":
                 # EXE states 0x0A..0x0D do not walk.  They increment DS:34DA,
                 # compare it to DS:34D8, then check same tile row and whether
@@ -658,15 +855,153 @@ class OpenAgentApp:
                 else:
                     enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, enemy.shoot_interval_ticks)
                 continue
-            enemy.frame_counter = actor_walk_counter_next(enemy.frame_counter, direction=enemy.direction)
+            if enemy.kind == "state24_up_laser":
+                # State 0x24 / object 0x0071 is not a walking enemy.  It keeps
+                # its X fixed, charges DS:34DA up to DS:34DC=10, and emits an
+                # upward object-0x72 laser when the player is above and centered.
+                period = max(1, enemy.shoot_interval_ticks or 10)
+                enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, period)
+                if enemy.shoot_timer_ticks >= period:
+                    if self.enemy_can_see_player(enemy):
+                        self.spawn_enemy_projectile(enemy)
+                        enemy.shoot_timer_ticks = 0
+                    else:
+                        enemy.shoot_timer_ticks = period
+                continue
+            if enemy.kind == "state17_landmine":
+                if enemy.object_id == STATE17_LANDMINE_IDLE_OBJECT_ID:
+                    # Raw 0x4D is runtime object 0x0270 until touched.  The draw
+                    # path at SAM1:0x36C2..0x3725 selects the visual by
+                    # floor(DS:34D6 / 5), and the state-0x17 update wraps
+                    # non-0x0271 objects once DS:34D6 > 9.  That yields exactly
+                    # two idle/blinking cels, not a longer explosion sequence.
+                    enemy.frame_counter += 1
+                    if enemy.frame_counter > 9:
+                        enemy.frame_counter = 1
+                    if self.enemy_overlaps_player(enemy):
+                        # SAM1:0xD0B1..0xD21E is more immediate than the old
+                        # approximation: touching object 0x0270 clears the map
+                        # cell, allocates object 0x0271/state 0x17, and then in
+                        # the same branch sets DS:69F5=1/DS:69F6=0x23 unless
+                        # the protection flag DS:69F3 is active.  The later
+                        # state-0x17 frame-0x0B helper is the explosion/contact
+                        # pass, not the first moment the player dies.
+                        enemy.object_id = STATE17_LANDMINE_TRIGGERED_OBJECT_ID
+                        enemy.frame_counter = 1
+                        enemy.aux_ticks = 0
+                        self.collected_cells |= {
+                            self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+                            for cell in iter_map_cells(self.episode.levels[self.level_index])
+                            if cell.code == STATE17_LANDMINE_CODE and cell.x == int(enemy.x) // TILE and cell.y == int(enemy.y) // TILE
+                        }
+                        self.kill_player()
+                    continue
+                enemy.frame_counter += 1
+                if enemy.frame_counter == STATE17_LANDMINE_DAMAGE_FRAME and self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                    # The state-0x17 update still calls helper 0x53C4 at
+                    # DS:34D6 == 0x0B.  Keep it as a secondary hard-death check
+                    # for cases where the spawned explosion overlaps the player
+                    # after the initial trigger path.
+                    self.kill_player()
+                if enemy.frame_counter == STATE17_LANDMINE_DAMAGE_FRAME + 1:
+                    self.spawn_projectile_explosion(enemy.x + TILE / 2, enemy.y + TILE / 2)
+                    self.spawn_projectile_explosion(enemy.x - TILE / 2, enemy.y + TILE / 2)
+                    self.spawn_projectile_explosion(enemy.x + TILE * 1.5, enemy.y + TILE / 2)
+                if enemy.frame_counter > 0x18:
+                    if enemy in self.entities.enemies:
+                        self.entities.enemies.remove(enemy)
+                    continue
+                continue
+            if enemy.kind == "state2b_anim":
+                # SAM1:0xB599..0xB5FC.  Period DS:34DA=5; after each period
+                # advance DS:34D6 and wrap 0x14.. to random(5)+1.
+                period = max(1, enemy.shoot_interval_ticks or STATE2B_ANIM_PERIOD)
+                enemy.shoot_timer_ticks += 1
+                if enemy.shoot_timer_ticks >= period:
+                    enemy.shoot_timer_ticks = 0
+                    enemy.frame_counter += 1
+                    if enemy.frame_counter > 0x13:
+                        enemy.frame_counter = deterministic_range(enemy.code, int(enemy.x)//TILE, int(enemy.y)//TILE, 1, 5, salt=self.anim_ticks)
+                continue
+            if enemy.kind == "state2c_anim":
+                # SAM1:0xB5FE..0xB65D.  State 0x2C advances its frame counter
+                # every actor tick; object 0x0103 also invokes helper 0x53C4,
+                # a narrow player-contact hazard check.
+                enemy.frame_counter += 2 if enemy.code == STATE2C_CONTACT_HAZARD_CODE else 1
+                if enemy.frame_counter > 0x13:
+                    enemy.frame_counter = 1
+                if enemy.code == STATE2C_CONTACT_HAZARD_CODE and self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                    self.hurt_player()
+                continue
+            if enemy.kind == "state27_shooter":
+                # SAM1:0xA89F..0xAFBF. Raw 0x24 is a helmet actor with two
+                # private timers, not a plain continuously-walking shooter:
+                #   DS:34DA increments to DS:34D8=0x3C before each shot test.
+                #   DS:34DE is a walking/closed phase timer, init random(20)+60.
+                #   DS:34DC is a short stationary/open hold, init 3 then 0x1E.
+                # While DS:34DE is non-zero the actor walks and wraps its frame
+                # range; when it reaches zero it stays still and clamps at the
+                # end of its helmet/open frame range until DS:34DC refills DE.
+                period = max(1, enemy.shoot_interval_ticks or 0x3C)
+                enemy.shoot_timer_ticks += 1
+                if enemy.shoot_timer_ticks >= period:
+                    enemy.shoot_timer_ticks = 0
+                    if self.enemy_can_see_player(enemy):
+                        self.spawn_enemy_projectile(enemy)
+
+                if enemy.phase_ticks > 0:
+                    enemy.phase_ticks -= 1
+                    if enemy.phase_ticks == 1:
+                        # EXE sets DS:34DC=0x1E at the one-before-open tick.
+                        enemy.aux_ticks = 0x1E
+                        enemy.frame_counter = state27_walk_counter_next(enemy.frame_counter, direction=enemy.direction, walking_phase=False)
+                        continue
+                    old_x = enemy.x
+                    enemy.x += enemy.direction * enemy.step_px
+                    blocked = self.enemy_collides(enemy) or not self.enemy_has_floor_ahead(enemy)
+                    if blocked:
+                        enemy.x = old_x
+                        enemy.direction *= -1
+                        enemy.frame_counter = state27_walk_counter_next(0, direction=enemy.direction, walking_phase=True)
+                    else:
+                        enemy.frame_counter = state27_walk_counter_next(enemy.frame_counter, direction=enemy.direction, walking_phase=True)
+                else:
+                    enemy.frame_counter = state27_walk_counter_next(enemy.frame_counter, direction=enemy.direction, walking_phase=False)
+                    enemy.aux_ticks -= 1
+                    if enemy.aux_ticks <= 0:
+                        enemy.phase_ticks = 0x50
+                        enemy.aux_ticks = 0x1E
+                if self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                    self.hurt_player()
+                continue
+            enemy.frame_counter = (
+                state2a_dog_counter_next(enemy.frame_counter, direction=enemy.direction)
+                if enemy.code == 0xAE
+                else actor_walk_counter_next(enemy.frame_counter, direction=enemy.direction)
+            )
             old_x = enemy.x
             if enemy.kind != "lightning_flyer" or enemy.alert_ticks <= 0:
                 enemy.x += enemy.direction * enemy.step_px
             if enemy.kind == "ceiling_laser":
-                blocked = self.enemy_collides(enemy) or not self.enemy_has_ceiling_ahead(enemy)
+                # State 0x21 probes the collision table before accepting the
+                # horizontal step.  Keep the crawler attached to its ceiling
+                # track by checking the candidate position, not the old one.
+                # This prevents a one-tile overrun past the last block above.
+                blocked = (
+                    self.enemy_collides(enemy)
+                    or enemy.x < 0
+                    or enemy.x + TILE > LEVEL_W * TILE
+                    or not self.enemy_has_ceiling_track(enemy)
+                )
             elif enemy.kind == "swimmer":
                 # Shark/water swimmers use the same actor counter, but do not
                 # need a floor probe. They reverse on body collision/level edge.
+                blocked = self.enemy_collides(enemy) or enemy.x < 0 or enemy.x + TILE > LEVEL_W * TILE
+            elif enemy.kind == "state06_contact_floater":
+                # State 0x06 / raw 0x7F probes body collision at the candidate
+                # side/top-bottom samples and reverses; unlike normal walkers
+                # there is no floor-ahead support test, so it can patrol across
+                # gaps instead of turning at ledges.
                 blocked = self.enemy_collides(enemy) or enemy.x < 0 or enemy.x + TILE > LEVEL_W * TILE
             elif enemy.kind == "lightning_flyer":
                 blocked = self.enemy_collides(enemy) or enemy.x < 0 or enemy.x + TILE > LEVEL_W * TILE
@@ -675,19 +1010,90 @@ class OpenAgentApp:
             if blocked:
                 enemy.x = old_x
                 enemy.direction *= -1
-                enemy.frame_counter = actor_walk_counter_next(0, direction=enemy.direction)
+                enemy.frame_counter = (
+                    state2a_dog_counter_next(0, direction=enemy.direction)
+                    if enemy.code == 0xAE
+                    else actor_walk_counter_next(0, direction=enemy.direction)
+                )
+            if enemy.kind == "state1e_shooter":
+                # State 0x1E / raw 0x56 uses a countdown-style DS:34DA.
+                # When it reaches zero and the player is on the same row in
+                # the facing direction, helper 0x5784 is called with object
+                # 0x0339, speed=4.  The EXE then reloads DS:34DA with 0x46.
+                if enemy.shoot_timer_ticks > 0:
+                    enemy.shoot_timer_ticks -= 1
+                if enemy.shoot_timer_ticks <= 0 and self.enemy_can_see_player(enemy):
+                    self.spawn_enemy_projectile(enemy)
+                    enemy.shoot_timer_ticks = STATE1E_FIRE_COOLDOWN_TICKS
+            elif enemy.kind == "state1f_shooter":
+                # State 0x1F / raw 0x58 increments DS:34DA up to the spawn
+                # table period (60), then emits object 0x033B if the same
+                # facing/row gate passes.
+                period = max(1, enemy.shoot_interval_ticks or 60)
+                enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, period)
+                if enemy.shoot_timer_ticks >= period:
+                    if self.enemy_can_see_player(enemy):
+                        self.spawn_enemy_projectile(enemy)
+                        enemy.shoot_timer_ticks = 0
+                    else:
+                        enemy.shoot_timer_ticks = period
+            if enemy.kind == "state06_contact_floater":
+                # Helper 0x53C4 is invoked unconditionally by state 0x06 after
+                # the movement/collision probe, which matches a contact hazard
+                # rather than a passive decorative walker.
+                if self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                    self.hurt_player()
+                continue
+            if enemy.kind == "state23_contact_bomb":
+                # State 0x23 decrements DS:34DC only while the actor/player
+                # contact helper reports overlap.  After three such actor ticks
+                # it rewrites itself to explosion state and spawns side shots.
+                if self.enemy_overlaps_player(enemy):
+                    enemy.alert_ticks = enemy.alert_ticks or 3
+                    enemy.alert_ticks -= 1
+                    if enemy.alert_ticks <= 0:
+                        self.explode_contact_bomb(enemy)
+                        continue
+                else:
+                    enemy.alert_ticks = 0
             if enemy.kind == "lightning_flyer":
+                # State 0x26 / raw 0x6E uses two timers:
+                #   DS:34DE = pause/hold timer. While non-zero, the candidate
+                #              X is discarded, so the actor animates but does
+                #              not actually advance.
+                #   DS:34DA = active lightning timer. When it is zero, the EXE
+                #              immediately calls helper 0x5784 with object 0x89
+                #              at (actor_x, actor_y + 16), then increments it.
+                #              When it reaches DS:34D8, it resets to zero and
+                #              reloads DS:34DE = 0x6E.
                 if enemy.alert_ticks > 0:
                     enemy.alert_ticks -= 1
                     continue
+                period = max(1, enemy.shoot_interval_ticks)
+                if enemy.shoot_timer_ticks == 0:
+                    self.spawn_lightning_bolt(enemy)
                 enemy.shoot_timer_ticks += 1
-                if enemy.shoot_interval_ticks and enemy.shoot_timer_ticks >= enemy.shoot_interval_ticks:
+                if enemy.shoot_timer_ticks >= period:
                     enemy.shoot_timer_ticks = 0
                     enemy.alert_ticks = 0x6E
-                    self.spawn_lightning_bolt(enemy)
                 continue
             if enemy.alert_ticks > 0:
                 enemy.alert_ticks -= 1
+            if enemy.kind == "ceiling_laser" and enemy.can_shoot:
+                # SAM1:0x9A25 increments DS:34DA.  At DS:34DA == DS:34D8 it
+                # tests whether the player is in the 32px-wide column below the
+                # crawler.  If the test fails, SAM1:0x9AB2 decrements the timer
+                # back to period-1, so the shooter remains armed and fires on
+                # the first valid tick after the player walks underneath.
+                period = max(1, enemy.shoot_interval_ticks)
+                enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, period)
+                if enemy.shoot_timer_ticks >= period:
+                    if self.enemy_can_see_player(enemy):
+                        self.spawn_enemy_projectile(enemy)
+                        enemy.shoot_timer_ticks = 0
+                    else:
+                        enemy.shoot_timer_ticks = period - 1
+                continue
             if enemy.can_shoot:
                 if self.enemy_can_see_player(enemy):
                     enemy.shoot_timer_ticks -= 1
@@ -721,7 +1127,7 @@ class OpenAgentApp:
         self.entities.score_popups = kept_popups
 
     def move_axis_pixels(self, dx: int | float, dy: int | float) -> bool:
-        """Move at integer DOS-pixel granularity and return True if blocked."""
+        """Move pixel-by-pixel for reconstructed dynamic overlap interactions."""
         p = self.player
         if not self.collision_enabled:
             p.x += dx
@@ -765,19 +1171,77 @@ class OpenAgentApp:
                     p.grounded = False
                 else:
                     new_bottom = p.y + PLAYER_COLLISION_BOTTOM
-                    if self.player_floor_blocked(prev_bottom, new_bottom) or self.player_on_platform():
-                        landing_y = self.player_landing_y(prev_bottom, new_bottom)
-                        if landing_y is not None:
-                            p.y = landing_y
-                        else:
-                            p.y -= step
+                    landing_y = self.player_landing_y(prev_bottom, new_bottom)
+                    if landing_y is not None:
+                        p.y = landing_y
                         p.grounded = True
                         p.jump_anim_timer = 0
-                        p.fall_ticks = 0
                         blocked = True
                         break
                     p.grounded = False
         return blocked
+
+    def move_player_horizontal_tick(self, step: int) -> bool:
+        """Apply one atomic SAM1:0xB7D9 horizontal destination probe."""
+        p = self.player
+        if not self.collision_enabled:
+            p.x += step
+            p.grounded = False
+            return False
+        old_x = p.x
+        p.x += step
+        barrel = self.player_touching_barrel()
+        if barrel is not None:
+            # Raw 0xA7 is handled by its actor overlap branch, not as a static
+            # runtime-grid cell. Keep the reconstructed per-pixel push path for
+            # that special case while normal map collision stays atomic.
+            p.x = old_x
+            return self.move_axis_pixels(step, 0)
+        if self.player_collides():
+            p.x = old_x
+            return True
+        if self._ignore_barrel_collision is not None and not self.player_overlaps_barrel(self._ignore_barrel_collision):
+            self._ignore_barrel_collision = None
+            self._ignore_barrel_collision_ticks = 0
+        return False
+
+    def move_player_upward_tick(self, step: int) -> bool:
+        """Apply the normal jump's atomic upward probe from SAM1:0xBD22..0xBD80."""
+        p = self.player
+        if not self.collision_enabled:
+            p.y -= step
+            p.grounded = False
+            return False
+        p.y -= step
+        if self.player_collides():
+            p.y += step
+            return True
+        p.grounded = False
+        return False
+
+    def move_player_fall_tick(self, step: int) -> bool:
+        """Apply one atomic SAM1:0xB8B3 fall-table displacement."""
+        p = self.player
+        if not self.collision_enabled:
+            p.y += step
+            p.grounded = False
+            return False
+        prev_bottom = p.y + PLAYER_COLLISION_BOTTOM
+        p.y += step
+        new_bottom = p.y + PLAYER_COLLISION_BOTTOM
+        landing_y = self.player_landing_y(prev_bottom, new_bottom)
+        if self.player_collides() or landing_y is not None:
+            if landing_y is not None:
+                p.y = landing_y
+            else:
+                # Body-solid landing branches at SAM1:0xB936..0xB948 align Y
+                # down to the containing 16-pixel row.
+                p.y = float(int(p.y) & ~0x0F)
+            p.grounded = True
+            p.jump_anim_timer = 0
+            return True
+        p.grounded = False
+        return False
 
     def move_axis(self, dx: float, dy: float) -> None:
         # Compatibility wrapper for older callers.  Mission player movement now
@@ -790,49 +1254,16 @@ class OpenAgentApp:
         if p.fire_held and p.fire_pose_active:
             p.anim_state = PLAYER_STATE_FIRE_LEFT if p.facing < 0 else PLAYER_STATE_FIRE_RIGHT
             return
-        # Original jump frames 0x0F/0x10 are tied to DS:69F5/69F6.  Do not use
-        # them merely because the player is airborne; falling from an edge keeps
-        # the normal facing/idle/walk state.
+        # The ordinary DS:6EC1 jump uses directional 0x0D/0x0E air poses.
+        # Alternating 0x0F/0x10 belongs to the distinct DS:69F5/69F6 path.
+        # Falling from an edge keeps the normal facing/idle/walk state.
         if p.jump_anim_timer > 0:
-            # Bank 13 only has two non-death jump frames here: right and left.
-            # Do not toggle into the following death frames.
-            p.anim_state = PLAYER_STATE_JUMP_LEFT if p.facing < 0 else PLAYER_STATE_JUMP_RIGHT
+            p.anim_state = PLAYER_STATE_AIR_LEFT if p.facing < 0 else PLAYER_STATE_AIR_RIGHT
             return
         if moving:
             p.anim_state = PLAYER_STATE_WALK_LEFT if p.facing < 0 else PLAYER_STATE_WALK_RIGHT
         else:
             p.anim_state = PLAYER_STATE_IDLE_LEFT if p.facing < 0 else PLAYER_STATE_IDLE_RIGHT
-
-    def refresh_grounded_state(self) -> None:
-        p = self.player
-        if not self.collision_enabled:
-            return
-        # Ground support is not tested by asking whether the current bottom
-        # pixel overlaps the floor.  The EXE-style probes look one pixel below
-        # the 16 px player box.  The previous +/- epsilon check missed the
-        # exact landing coordinate (bottom == tile_top - 1), so jump input often
-        # saw grounded=False and could never start.
-        bottom = p.y + PLAYER_COLLISION_BOTTOM
-        landing_y = self.player_landing_y(bottom, bottom + 1.01)
-        platform = self.platform_below()
-        if landing_y is not None and abs(p.y - landing_y) <= 1.0:
-            p.y = landing_y
-            p.vy = 0
-            p.grounded = True
-            if p.jump_anim_timer <= 0:
-                p.fall_ticks = 0
-            return
-        if platform is not None and abs((p.y + PLAYER_H) - platform.y) <= 1.0:
-            p.y = platform.y - PLAYER_H
-            p.vy = 0
-            p.grounded = True
-            if p.jump_anim_timer <= 0:
-                p.fall_ticks = 0
-            return
-        # If the two foot probes no longer see +0x1CD/+0x1CC under the player,
-        # falling starts. This keeps ledges working while still allowing jumping
-        # from an exact tile-top standing position.
-        p.grounded = False
 
     def player_landing_y(self, prev_bottom: float, new_bottom: float) -> float | None:
         p = self.player
@@ -842,12 +1273,12 @@ class OpenAgentApp:
             tile_y = int(new_bottom) // TILE
             if self.cell_blocks_floor(tile_x, tile_y, prev_bottom=prev_bottom, new_bottom=new_bottom):
                 candidates.append(float(tile_y * TILE - PLAYER_COLLISION_BOTTOM - 1))
-        platform = self.platform_below()
-        if platform is not None:
-            candidates.append(float(platform.y - PLAYER_H))
-        barrel = self.barrel_below()
-        if barrel is not None:
-            candidates.append(float(barrel.y - PLAYER_H))
+        platform_y = self.platform_landing_y(prev_bottom, new_bottom)
+        if platform_y is not None:
+            candidates.append(platform_y)
+        barrel_y = self.player_barrel_landing_y(prev_bottom, new_bottom)
+        if barrel_y is not None:
+            candidates.append(barrel_y)
         return min(candidates) if candidates else None
 
     def player_collides(self) -> bool:
@@ -882,7 +1313,45 @@ class OpenAgentApp:
         return self.cell_blocks_body(x, y)
 
     def removed_runtime_source_keys(self) -> set[tuple[int, int, int, str]]:
-        return set(self.collected_cells) | set(self.opened_doors)
+        # Runtime actors are extracted from raw map tokens and simulated from
+        # actor slots.  Their source tokens must not stay in the reconstructed
+        # runtime collision grid, otherwise enemy projectiles can immediately
+        # collide with their own map marker and some actors behave as invisible
+        # static walls.
+        removed = set(self.dynamic_source_keys()) | set(self.collected_cells) | set(self.opened_doors) | set(self.opened_exit_doors)
+        if self.laser_field_deactivated:
+            removed |= self.laser_field_source_keys()
+        return removed
+
+    def dynamic_source_keys(self) -> set[tuple[int, int, int, str]]:
+        if self.is_world_map:
+            return set()
+        if self._dynamic_source_keys_cache is None:
+            info = self.episode.levels[self.level_index]
+            self._dynamic_source_keys_cache = {
+                self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+                for cell in iter_map_cells(info)
+                if is_dynamic_mission_code(cell.code)
+            }
+        return set(self._dynamic_source_keys_cache)
+
+    def laser_field_visible(self) -> bool:
+        # Runtime cA 0x025B is one of the EXE's globally blink-redrawn cells.
+        # The exact timer is tied to DS:6840 redraw toggles; 4 DOS ticks gives
+        # a close visual cadence in this runtime.
+        return (self.anim_ticks // 4) % 2 == 0
+
+    def laser_field_source_keys(self) -> set[tuple[int, int, int, str]]:
+        if self.is_world_map:
+            return set()
+        if self._laser_field_source_keys_cache is None:
+            info = self.episode.levels[self.level_index]
+            self._laser_field_source_keys_cache = {
+                self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+                for cell in iter_map_cells(info)
+                if cell.code == LASER_FIELD_CODE
+            }
+        return set(self._laser_field_source_keys_cache)
 
     def runtime_collision_grid(self):
         info = self.episode.levels[self.level_index]
@@ -900,21 +1369,34 @@ class OpenAgentApp:
     def cell_blocks_body(self, x: int, y: int) -> bool:
         if x < 0 or y < 0 or x >= LEVEL_W or y >= LEVEL_H:
             return True
+        if any(ox == x and oy - 1 == y for ox, oy, _code, _layer in self.opened_exit_doors):
+            # State 0x16 clears collision for the upper cell too: the lower
+            # 0x027D becomes 0x027E, and the upper 0x0279 cell is moved to
+            # layer-B visual 0x027A with +0x1CC cleared.
+            return False
         cell = self.runtime_collision_cell(x, y)
         if cell is None:
             return False
         if is_door_code(cell.source_code):
             return door_unlocked_by(cell.source_code) not in self.owned_keys
+        if is_exit_door_code(cell.source_code):
+            # The raw source is removed from the runtime grid only once the
+            # 0x027B/state-0x16 blast completes.  Until then it remains solid.
+            return True
         return cell.body_solid
 
     def cell_blocks_floor(self, x: int, y: int, *, prev_bottom: float, new_bottom: float) -> bool:
         if x < 0 or y < 0 or x >= LEVEL_W or y >= LEVEL_H:
             return True
+        if any(ox == x and oy - 1 == y for ox, oy, _code, _layer in self.opened_exit_doors):
+            return False
         cell = self.runtime_collision_cell(x, y)
         if cell is None:
             return False
         if is_door_code(cell.source_code):
             return door_unlocked_by(cell.source_code) not in self.owned_keys
+        if is_exit_door_code(cell.source_code):
+            return True
         if cell.body_solid:
             return True
         if cell.foot_solid:
@@ -925,364 +1407,6 @@ class OpenAgentApp:
     def runtime_cell_key(self, x: int, y: int, code: int, layer: str) -> tuple[int, int, int, str]:
         return (x, y, code, layer)
 
-
-    def try_fire_projectile(self) -> bool:
-        p = self.player
-        if self.player_projectile_active():
-            return False
-        # The EXE fire-key branch checks DS:6EC1/69F5 and skips shot creation
-        # while the jump routine is active.  It also exits before changing
-        # DS:3500 when there are no shots available.
-        if p.jump_anim_timer > 0:
-            p.fire_cooldown = 0.10
-            return False
-        if self.ammo <= 0:
-            p.fire_cooldown = 0.18
-            self.play_sound(SOUND_NO_AMMO)
-            return False
-        self.ammo -= 1
-        start_x = p.x + (PLAYER_W - 1 if p.facing > 0 else -2)
-        start_y = p.y + 7
-        self.entities.projectiles.append(Projectile(start_x, start_y, p.facing, speed=4 * DOS_TICK_HZ, hostile=False, bank=1, tile_right=38, tile_left=39, owner="player"))
-        self.play_sound(SOUND_FIRE)
-        return True
-
-    def player_projectile_active(self) -> bool:
-        # The EXE helper 0x5784 allocates a real actor slot for the player's
-        # bullet (state 0x07/object 0x27).  Impact rewrites that same slot to
-        # state 0x1388/object 0x187, so the player cannot fire again until the
-        # impact actor has finished too.
-        return any(shot.owner == "player" for shot in self.entities.projectiles)
-
-    def active_camera(self) -> tuple[int, int]:
-        p = self.player
-        max_x = max(0, LEVEL_W * TILE - ACTIVE_VIEW_W)
-        max_y = max(0, LEVEL_H * TILE - ACTIVE_VIEW_H)
-        x = int(min(max(p.x + PLAYER_W / 2 - ACTIVE_VIEW_W / 2, 0), max_x))
-        y = int(min(max(p.y + PLAYER_H / 2 - ACTIVE_VIEW_H / 2, 0), max_y))
-        return x, y
-
-    def rect_in_active_viewport(self, x: float, y: float, w: int = TILE, h: int = TILE, margin: int = 0) -> bool:
-        cam_x, cam_y = self.active_camera()
-        return not (
-            x + w < cam_x - margin
-            or x > cam_x + ACTIVE_VIEW_W + margin
-            or y + h < cam_y - margin
-            or y > cam_y + ACTIVE_VIEW_H + margin
-        )
-
-    def enemy_can_see_player(self, enemy) -> bool:
-        """Approximate the EXE actor firing gates.
-
-        Horizontal guards compare the player row and facing direction before
-        calling projectile helper 0x5784.  The bank-12 ceiling crawler/state
-        0x21 uses the same timer machinery but tests a vertical column below it
-        and emits a downward laser/projectile.
-        """
-        if not enemy.can_shoot:
-            return False
-        p = self.player
-        if enemy.kind == "ceiling_laser":
-            # State 0x21 waits until the actor is active/on-screen, then checks
-            # whether the player is underneath the emitter column.  Use 16 px
-            # column overlap rather than a single exact tile index so the shot
-            # triggers when the player is visibly below the ceiling cannon.
-            if not self.rect_in_active_viewport(enemy.x, enemy.y, TILE, TILE):
-                return False
-            center_delta = abs((enemy.x + TILE / 2) - (p.x + PLAYER_W / 2))
-            return center_delta <= 10 and p.y > enemy.y
-        enemy_row = int(enemy.y) // TILE
-        player_row = int(p.y + 8) // TILE
-        if enemy_row != player_row:
-            return False
-        if enemy.direction > 0 and p.x <= enemy.x:
-            return False
-        if enemy.direction < 0 and p.x >= enemy.x:
-            return False
-        return True
-
-    def bank14_shot_hits_back(self, enemy, shot: Projectile) -> bool:
-        if enemy.bank != 14 or enemy.base_tile is None or enemy.is_rip:
-            return False
-        # If the bullet travels in the same direction the guard is facing, it
-        # reached him from behind.  The game responds by making him face the
-        # player, which is visible with bank-14 shooters.
-        return shot.direction == enemy.direction
-
-    def spawn_enemy_projectile(self, enemy) -> None:
-        if enemy.kind == "ceiling_laser":
-            # State 0x21 / object 0x0345 emits the vertical bank-12 laser family
-            # when the player is underneath it.  The projectile helper still
-            # advances it at 4 px/tick, but the sprite is an animated vertical
-            # beam, not the horizontal player bullet.
-            start_x = enemy.x + 1
-            start_y = enemy.y + TILE - 2
-            self.entities.projectiles.append(
-                Projectile(
-                    start_x,
-                    start_y,
-                    0,
-                    speed=4 * DOS_TICK_HZ,
-                    hostile=True,
-                    bank=CEILING_LASER_PROJECTILE_BANK,
-                    tile_right=CEILING_LASER_PROJECTILE_TILES[0],
-                    tile_left=CEILING_LASER_PROJECTILE_TILES[0],
-                    dx_px=0,
-                    dy_px=4,
-                    anim_tiles=CEILING_LASER_PROJECTILE_TILES,
-                    owner="enemy",
-                )
-            )
-            return
-        if enemy.kind == "stationary_shooter":
-            # EXE states 0x0A/0x0B use projectile object 0x01D6, while
-            # 0x0C/0x0D use 0x01E8/0x01EC.  Those resolve to the decoded
-            # bank-4 sprites below.  The helper call passes speed=4.
-            bank, tile_right, tile_left = STATIONARY_SHOOTER_PROJECTILE.get(enemy.code, (1, 38, 39))
-            start_x = enemy.x + STATIONARY_SHOOTER_SPAWN_X_OFFSET.get(enemy.code, TILE - 2 if enemy.direction > 0 else -2)
-            start_y = enemy.y + 8
-            self.entities.projectiles.append(
-                Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=bank, tile_right=tile_right, tile_left=tile_left, owner="enemy")
-            )
-            return
-        # Bank-14 shooter guards and the player share projectile helper 0x5784
-        # with object_id=0.  That helper resolves to active object 0x0027,
-        # displayed here as bank 1 tiles 38/39, speed=4 px/tick.
-        start_x = enemy.x + (TILE - 2 if enemy.direction > 0 else -2)
-        start_y = enemy.y + 8
-        self.entities.projectiles.append(Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=1, tile_right=38, tile_left=39, owner="enemy"))
-        self.play_sound(SOUND_FIRE)
-
-    def spawn_lightning_bolt(self, enemy) -> None:
-        # Raw 0x6E / state 0x26 calls projectile helper 0x5784 with object
-        # 0x0089 at (actor_x, actor_y + 16).  Helper maps object 0x89 to state
-        # 0x28 and initializes DS:34DA=0x1E; the state animates in place until
-        # the timer expires.
-        self.entities.projectiles.append(
-            Projectile(
-                enemy.x,
-                enemy.y + TILE,
-                0,
-                hostile=True,
-                bank=2,
-                tile_right=36,
-                tile_left=36,
-                dx_px=0,
-                dy_px=0,
-                anim_tiles=(36, 37, 38, 39),
-                owner="enemy",
-                life_ticks=0x1E,
-            )
-        )
-        self.play_sound(SOUND_FIRE)
-
-    def spawn_projectile_explosion(self, x: float, y: float) -> None:
-        # Impact branch near SAM1:0x4F15 and enemy hit branch near 0x5C59 turns
-        # the projectile actor into the short hit spark.  The visible decoded
-        # sprite family is bank 5 tiles 24..27, not the unrelated bank-6 frames.
-        self.entities.explosions.append(Explosion(float(x - 8), float(y - 8)))
-
-    def begin_projectile_impact(self, shot: Projectile) -> None:
-        # SAM1:0x5C59 rewrites the projectile slot to state 0x1388, object
-        # 0x0187, speed 0.  Keep it in projectiles so the owning shot slot stays
-        # occupied until the visible impact frames complete.
-        shot.impact_ticks = 12
-        shot.dx_px = 0
-        shot.dy_px = 0
-        shot.frame_counter = 0
-
-    def actor_rect(self, enemy: Enemy) -> tuple[float, float, float, float]:
-        width = TILE * 2 if enemy.code in {0xAE, 0x24, 0x56, 0x58} else TILE
-        height = TILE * 2 if enemy.code in {0x24} else TILE
-        return enemy.x, enemy.y, enemy.x + width - 1, enemy.y + height - 1
-
-    def actor_contains_point(self, enemy: Enemy, x: float, y: float) -> bool:
-        left, top, right, bottom = self.actor_rect(enemy)
-        return left <= x <= right and top <= y <= bottom
-
-    def enemy_is_shootable(self, enemy: Enemy) -> bool:
-        if enemy.is_rip or enemy.bank == 14:
-            return True
-        if enemy.hp <= 0:
-            return False
-        return object_id_is_shootable(enemy.object_id)
-
-    def actor_is_indestructible_solid(self, enemy: Enemy) -> bool:
-        # Stationary rocket/shooter traps are actor slots for firing/timing, but
-        # not entries in the EXE damage branch.  Treat them as solid map objects:
-        # bullets impact and explode, but the actor is not removed or damaged.
-        # Other unimplemented actor states may be harmful or non-shootable, but
-        # they should not automatically become wall blocks.
-        return enemy.kind == "stationary_shooter"
-
-    def update_projectiles_tick(self) -> None:
-        kept: list[Projectile] = []
-        for shot in self.entities.projectiles:
-            shot.frame_counter += 1
-            if shot.is_impact:
-                shot.impact_ticks -= 1
-                if shot.impact_ticks > 0:
-                    kept.append(shot)
-                continue
-            if shot.life_ticks > 0:
-                shot.life_ticks -= 1
-                if shot.hostile and self.hurt_flash <= 0 and self.projectile_hits_player_rect(shot.x, shot.y, TILE, TILE):
-                    self.hurt_flash = 0.75
-                    self.play_sound(SOUND_HURT)
-                if shot.life_ticks > 0:
-                    kept.append(shot)
-                continue
-            old_x, old_y = shot.x, shot.y
-            shot.x += shot.dx_px if shot.dx_px is not None else shot.direction * 4
-            shot.y += shot.dy_px
-            if not self.projectile_in_active_viewport(shot):
-                continue
-            tile_x = int(shot.x) // TILE
-            tile_y = int(shot.y) // TILE
-            if tile_x < 0 or tile_y < 0 or tile_x >= LEVEL_W or tile_y >= LEVEL_H:
-                continue
-            if self.cell_blocks_body(tile_x, tile_y):
-                self.begin_projectile_impact(shot)
-                kept.append(shot)
-                continue
-            if shot.hostile:
-                if self.projectile_hits_player(shot, old_x, old_y):
-                    self.hurt_flash = 0.75
-                    self.play_sound(SOUND_HURT)
-                    self.begin_projectile_impact(shot)
-                    kept.append(shot)
-                    continue
-                kept.append(shot)
-                continue
-            blocked_by_actor = None
-            hit = None
-            for enemy in self.entities.enemies:
-                if self.projectile_crosses_actor(shot, enemy, old_x, old_y):
-                    if self.enemy_is_shootable(enemy):
-                        hit = enemy
-                        break
-                    if self.actor_is_indestructible_solid(enemy):
-                        blocked_by_actor = enemy
-                        break
-            if hit is not None:
-                self.hit_enemy_with_projectile(hit, shot)
-                self.begin_projectile_impact(shot)
-                kept.append(shot)
-                continue
-            if blocked_by_actor is not None:
-                self.begin_projectile_impact(shot)
-                kept.append(shot)
-                continue
-            kept.append(shot)
-        self.entities.projectiles = kept
-
-    def projectile_hits_player(self, shot: Projectile, old_x: float | None = None, old_y: float | None = None) -> bool:
-        p = self.player
-        return self.segment_hits_rect(
-            old_x if old_x is not None else shot.x,
-            old_y if old_y is not None else shot.y,
-            shot.x,
-            shot.y,
-            p.x,
-            p.y,
-            p.x + PLAYER_W - 1,
-            p.y + PLAYER_H - 1,
-        )
-
-    def projectile_hits_player_rect(self, x: float, y: float, w: int, h: int) -> bool:
-        p = self.player
-        return not (
-            p.x + PLAYER_W - 1 < x
-            or p.x > x + w - 1
-            or p.y + PLAYER_H - 1 < y
-            or p.y > y + h - 1
-        )
-
-    def projectile_crosses_actor(self, shot: Projectile, enemy: Enemy, old_x: float, old_y: float) -> bool:
-        left, top, right, bottom = self.actor_rect(enemy)
-        return self.segment_hits_rect(old_x, old_y, shot.x, shot.y, left, top, right, bottom)
-
-    def projectile_in_active_viewport(self, shot: Projectile) -> bool:
-        # Projectile actors are culled by the fixed DOS gameplay viewport, not
-        # the whole level and not the resized editor window.  Use a small sprite
-        # footprint so a bullet disappears only once it has fully left view.
-        return self.rect_in_active_viewport(shot.x - 8, shot.y - 8, 16, 16)
-
-    def segment_hits_rect(self, x1: float, y1: float, x2: float, y2: float, left: float, top: float, right: float, bottom: float) -> bool:
-        steps = max(1, int(max(abs(x2 - x1), abs(y2 - y1))))
-        for i in range(steps + 1):
-            t = i / steps
-            x = x1 + (x2 - x1) * t
-            y = y1 + (y2 - y1) * t
-            if left <= x <= right and top <= y <= bottom:
-                return True
-        return False
-
-    def spawn_score_popup(self, x: float, y: float, value: int, *, preferred_tile: int | None = None) -> None:
-        popup_tile = preferred_tile if preferred_tile is not None else score_popup_tile_for_value(value)
-        if popup_tile is None:
-            # The original popup sprite set only has fixed denominations up to
-            # 10K; use the largest visible score marker for larger bonuses.
-            popup_tile = score_popup_tile_for_value(10000)
-        if popup_tile is not None:
-            self.entities.score_popups.append(ScorePopup(float(x), float(y - 8), value, popup_tile))
-
-    def hit_enemy_with_projectile(self, enemy, shot: Projectile | None = None) -> None:
-        if enemy.is_rip:
-            self.entities.enemies.remove(enemy)
-            self.score += BANK14_RIP_SHOT_SCORE
-            self.spawn_score_popup(enemy.x, enemy.y, BANK14_RIP_SHOT_SCORE)
-            self.play_sound(SOUND_ENEMY_DEATH)
-            return
-        if enemy.bank == 14 and enemy.base_tile is not None:
-            hit_from_back = shot is not None and self.bank14_shot_hits_back(enemy, shot)
-
-            # The back-shot observation is part of the hit reaction, not a
-            # separate non-damaging warning.  In the original actor path the
-            # projectile still enters the same interaction/damage pipeline; the
-            # visible extra effect is that DS:34E2 is rewritten so the guard
-            # faces the player after being hit from behind.
-            if hit_from_back:
-                enemy.direction *= -1
-                enemy.alert_ticks = 12
-
-            if enemy.base_tile > 0:
-                enemy.base_tile -= 8
-                enemy.code = BANK14_GUARD_CODE_BY_BASE_TILE.get(enemy.base_tile, enemy.code)
-                enemy.step_px = BANK14_GUARD_SPEED_BY_BASE_TILE.get(enemy.base_tile, enemy.step_px)
-                enemy.behavior_state = BANK14_GUARD_BEHAVIOUR_BY_BASE_TILE.get(enemy.base_tile, enemy.behavior_state)
-                shoot_range = BANK14_GUARD_SHOOT_TIMER_RANGE_BY_BASE_TILE.get(enemy.base_tile)
-                if shoot_range is not None:
-                    enemy.shoot_interval_ticks = deterministic_range(
-                        enemy.code, int(enemy.x) // TILE, int(enemy.y) // TILE, shoot_range[0], shoot_range[1], salt=2
-                    )
-                    enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks, enemy.shoot_interval_ticks) or enemy.shoot_interval_ticks
-                else:
-                    enemy.shoot_interval_ticks = 0
-                    enemy.shoot_timer_ticks = 0
-                enemy.frame_counter = actor_walk_counter_next(0, direction=enemy.direction)
-                self.play_sound(SOUND_HURT)
-                return
-
-            enemy.kind = "rip"
-            enemy.base_tile = BANK14_RIP_TILE
-            enemy.step_px = 0
-            enemy.shoot_interval_ticks = 0
-            enemy.shoot_timer_ticks = 0
-            enemy.frame_counter = 0
-            self.play_sound(SOUND_ENEMY_DEATH)
-            return
-        if enemy.hp > 1:
-            enemy.hp -= 1
-            enemy.alert_ticks = 8
-            if shot is not None:
-                enemy.direction = -1 if shot.x > enemy.x else 1
-            self.play_sound(SOUND_HURT)
-            return
-        self.entities.enemies.remove(enemy)
-        self.score += 100
-        self.spawn_score_popup(enemy.x, enemy.y, 100)
-        self.play_sound(SOUND_ENEMY_DEATH)
 
     def enemy_collides(self, enemy) -> bool:
         l, t, r, b = self.actor_rect(enemy)
@@ -1297,21 +1421,33 @@ class OpenAgentApp:
         return False
 
     def enemy_has_floor_ahead(self, enemy) -> bool:
-        foot_x = int(enemy.x + (TILE if enemy.direction > 0 else -1)) // TILE
-        foot_y = int(enemy.y + TILE) // TILE
+        left, _top, right, bottom = self.actor_rect(enemy)
+        foot_x = int((right + 1) if enemy.direction > 0 else (left - 1)) // TILE
+        foot_y = int(bottom + 1) // TILE
         if foot_x < 0 or foot_x >= LEVEL_W or foot_y < 0 or foot_y >= LEVEL_H:
             return False
         cell = self.runtime_collision_cell(foot_x, foot_y)
         return bool(cell and (cell.body_solid or cell.foot_solid))
 
 
-    def enemy_has_ceiling_ahead(self, enemy) -> bool:
-        probe_x = int(enemy.x + (TILE if enemy.direction > 0 else -1)) // TILE
+    def enemy_has_ceiling_track(self, enemy) -> bool:
+        # State 0x21 uses the EXE collision table around the candidate actor
+        # position.  A practical equivalent is: the tile directly above the
+        # crawler's centre/leading half must still be solid after the move.
+        # Checking the candidate centre prevents the crawler from travelling
+        # beyond the visible support block above it.
         probe_y = int(enemy.y - 1) // TILE
-        if probe_x < 0 or probe_x >= LEVEL_W or probe_y < 0:
+        if probe_y < 0:
+            return False
+        probe_x = int(enemy.x + TILE / 2 + enemy.direction * (TILE / 2 - 1)) // TILE
+        if probe_x < 0 or probe_x >= LEVEL_W:
             return False
         cell = self.runtime_collision_cell(probe_x, probe_y)
-        return bool(cell and cell.body_solid)
+        return bool(cell and (cell.body_solid or cell.foot_solid))
+
+    def enemy_has_ceiling_ahead(self, enemy) -> bool:
+        # Backwards-compatible wrapper for older notes/tools.
+        return self.enemy_has_ceiling_track(enemy)
 
     def platform_collides(self, platform: MovingPlatform) -> bool:
         left = int(platform.x) // TILE
@@ -1390,6 +1526,24 @@ class OpenAgentApp:
                 return platform
         return None
 
+    def platform_landing_y(self, prev_bottom: float, new_bottom: float) -> float | None:
+        """Return the topmost moving-platform landing crossed this player tick."""
+        p = self.player
+        player_left = p.x
+        player_right = p.x + PLAYER_W - 1
+        # Player map probes use the inclusive collision pixel at y+15. Dynamic
+        # platform tops line up with the sprite base at y+16, so shift both
+        # endpoints before applying the one-way downward crossing test.
+        prev_base = prev_bottom + 1
+        new_base = new_bottom + 1
+        candidates: list[float] = []
+        for platform in self.entities.platforms:
+            horizontal = player_right >= platform.x + 2 and player_left <= platform.x + TILE - 3
+            vertical = prev_base <= platform.y <= new_base
+            if horizontal and vertical:
+                candidates.append(float(platform.y - PLAYER_H))
+        return min(candidates) if candidates else None
+
     def update_barrel_overlap_state(self) -> None:
         """Expire the transient pass-through state used for pushable barrels."""
         barrel = self._ignore_barrel_collision
@@ -1443,6 +1597,21 @@ class OpenAgentApp:
                 return barrel
         return None
 
+    def player_barrel_landing_y(self, prev_bottom: float, new_bottom: float) -> float | None:
+        """Return the topmost barrel surface crossed by the falling player."""
+        p = self.player
+        player_left = p.x
+        player_right = p.x + PLAYER_W - 1
+        prev_base = prev_bottom + 1
+        new_base = new_bottom + 1
+        candidates: list[float] = []
+        for barrel in self.entities.barrels:
+            horizontal = player_right >= barrel.x + 2 and player_left <= barrel.x + TILE - 3
+            vertical = prev_base <= barrel.y <= new_base
+            if horizontal and vertical:
+                candidates.append(float(barrel.y - PLAYER_H))
+        return min(candidates) if candidates else None
+
     def player_touching_barrel(self) -> PushableBarrel | None:
         p = self.player
         for barrel in self.entities.barrels:
@@ -1479,8 +1648,11 @@ class OpenAgentApp:
         return self.platform_below() is not None or self.barrel_below() is not None
 
     def update_player_interactions(self, dt: float) -> None:
+        self.check_teleporter_touch()
         self.collect_touching_codes()
+        self.check_exit_door_touch()
         self.collect_rip_enemies()
+        self.check_laser_field_touch()
         self.check_spike_touch()
         self.check_beam_touch()
         self.check_enemy_touch(dt)
@@ -1500,7 +1672,7 @@ class OpenAgentApp:
         changed = False
         for cell in self.player_overlapping_cells():
             key = self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
-            if key in self.collected_cells or key in self.opened_doors:
+            if key in self.collected_cells or key in self.opened_doors or key in self.opened_exit_doors:
                 continue
             kind = mission_code_kind(cell.code)
             if is_collectible_code(cell.code):
@@ -1510,10 +1682,24 @@ class OpenAgentApp:
                     self.owned_keys.add(cell.code)
                     self.play_sound(SOUND_PICKUP)
                 elif kind == "ammo":
-                    self.ammo += 5
+                    # Runtime visual 0x012D branch at SAM1:0xC0BF..0xC106
+                    # adds five shots, clamps DS:6858 to 0x63, clears the
+                    # map cell and plays sound 0x05.
+                    self.ammo = min(MAX_AMMO, self.ammo + 5)
                     self.play_sound(SOUND_PICKUP)
+                elif kind == "dynamite":
+                    # Runtime visual 0x027B branch at SAM1:0xCB72..0xCBE5:
+                    # set DS:69F4, clear the cell, play sound 0x05, award 500
+                    # points and spawn the 500 popup.  DS:69F4 is later tested
+                    # by the level-exit door visual 0x027D.
+                    self.has_dynamite = True
+                    self.score += 500
+                    self.play_sound(SOUND_PICKUP)
+                    self.spawn_score_popup(cell.x * TILE, cell.y * TILE, 500)
                 elif (score_value := score_value_for_code(cell.code)) is not None:
                     self.score += score_value
+                    if cell.code == FLOPPY_DISK_CODE:
+                        self.has_floppy_disk = True
                     self.play_sound(SOUND_SCORE_1000 if score_value >= 1000 else SOUND_PICKUP)
                     popup_tile = score_popup_tile_for_value(score_value)
                     if popup_tile is not None:
@@ -1523,6 +1709,14 @@ class OpenAgentApp:
                 elif kind == "glasses":
                     self.has_glasses = True
                     self.play_sound(SOUND_PICKUP)
+            elif cell.code == LASER_COMPUTER_CODE and not self.laser_field_deactivated:
+                if self.has_floppy_disk:
+                    self.deactivate_laser_field()
+                    changed = True
+                else:
+                    if self._laser_computer_last_warn_key != key:
+                        self.play_sound(SOUND_NO_AMMO)
+                        self._laser_computer_last_warn_key = key
             elif is_door_code(cell.code) and door_unlocked_by(cell.code) in self.owned_keys:
                 self.opened_doors.add(key)
                 self.owned_keys.discard(door_unlocked_by(cell.code))
@@ -1531,6 +1725,102 @@ class OpenAgentApp:
         if changed:
             self.rebuild_level_image()
 
+    def exit_door_source_key(self, cell) -> tuple[int, int, int, str]:
+        return self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+
+    def update_exit_door_blasts(self) -> None:
+        if not self.exit_door_blast_timers:
+            return
+        completed: list[tuple[int, int, int, str]] = []
+        for key in list(self.exit_door_blast_timers):
+            self.exit_door_blast_timers[key] -= 1
+            if self.exit_door_blast_timers[key] <= 0:
+                completed.append(key)
+        if not completed:
+            return
+        info = self.episode.levels[self.level_index]
+        for key in completed:
+            self.exit_door_blast_timers.pop(key, None)
+            self.opened_exit_doors.add(key)
+            x, y, code, layer = key
+            # State 0x16 does not erase the exit door.  At SAM1:0x7490..0x7523
+            # it rewrites the lower 0x027D cell to 0x027E and rewrites the
+            # upper 0x0279 cell into layer-B visual 0x027A; both cells clear
+            # +0x1CC for passability.  The renderer overlays the two broken
+            # door tiles instead of deleting the raw 0x71 footprint.
+            self.spawn_projectile_explosion(x * TILE + TILE / 2, y * TILE + TILE / 2)
+            self.spawn_projectile_explosion(x * TILE + TILE / 2, (y - 1) * TILE + TILE / 2)
+        self.rebuild_level_image()
+
+    def check_exit_door_touch(self) -> None:
+        if self.is_world_map or self.player_dead_timer > 0:
+            return
+        for cell in self.player_overlapping_cells():
+            if not is_exit_door_code(cell.code):
+                continue
+            key = self.exit_door_source_key(cell)
+            if key in self.opened_exit_doors:
+                self.complete_level_from_exit()
+                return
+            if key in self.exit_door_blast_timers:
+                return
+            if not self.has_dynamite:
+                # SAM1:0xCD73 path shows the "need dynamite" text once via
+                # DS:69EE; keep this non-destructive and quiet until the text
+                # renderer is rebuilt.
+                return
+            # SAM1:0xCBFA..0xCD71: consume DS:69F4, play sound 0x0B, spawn
+            # object 0x027B/state 0x16 with DS:34D8=0x28.  Do not remove the
+            # source immediately; the door remains blocking while it blows.
+            self.has_dynamite = False
+            self.exit_door_blast_timers[key] = 0x28
+            self.play_sound(SOUND_EXIT_DYNAMITE)
+            self.spawn_projectile_explosion(cell.x * TILE + TILE / 2, cell.y * TILE + TILE / 2)
+            return
+
+    def complete_level_from_exit(self) -> None:
+        # The true exit branch around SAM1:0xCDF4 continues into a mission-end
+        # transition/menu flow.  For the playable port, returning to the
+        # overworld is the closest state transition already implemented.
+        if self.level_exit_pending:
+            return
+        self.level_exit_pending = True
+        self.last_world_position = self.last_world_position or self.find_world_spawn()
+        self.level_index = 0
+        self.load_level(reset_player=True)
+
+    def deactivate_laser_field(self) -> None:
+        if self.laser_field_deactivated:
+            return
+        # SAM1:0xD25F clears DS:69EC, sets DS:69ED, then scans the whole
+        # runtime grid and zeroes every cA == 0x025B cell.  Raw map code 0x82
+        # is the source byte that generates cA 0x025B.
+        self.has_floppy_disk = False
+        self.laser_field_deactivated = True
+        self._laser_computer_last_warn_key = None
+        self.collected_cells |= self.laser_field_source_keys()
+        self.play_sound(0x18)
+
+    def check_laser_field_touch(self) -> None:
+        if self.hurt_flash > 0 or self.laser_field_deactivated or not self.laser_field_visible():
+            return
+        p = self.player
+        left, top = p.x, p.y
+        right, bottom = p.x + PLAYER_W - 1, p.y + PLAYER_H - 1
+        for cell in self.player_overlapping_cells():
+            if cell.code != LASER_FIELD_CODE:
+                continue
+            key = self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
+            if key in self.collected_cells:
+                continue
+            lx1 = cell.x * TILE + 2
+            ly1 = cell.y * TILE + 2
+            lx2 = cell.x * TILE + TILE - 3
+            ly2 = cell.y * TILE + TILE - 3
+            if right < lx1 or left > lx2 or bottom < ly1 or top > ly2:
+                continue
+            self.kill_player()
+            return
 
     def collect_rip_enemies(self) -> None:
         p = self.player
@@ -1562,10 +1852,7 @@ class OpenAgentApp:
                 continue
             if bottom < sy + 2 or top > sy + TILE - 3:
                 continue
-            self.hurt_flash = 0.75
-            self.play_sound(SOUND_HURT)
-            self.player.jump_anim_timer = 0
-            self.player.grounded = False
+            self.hurt_player()
             break
 
     def check_beam_touch(self) -> None:
@@ -1584,10 +1871,7 @@ class OpenAgentApp:
             for bx1, by1, bx2, by2 in rects:
                 if right < bx1 or left > bx2 or bottom < by1 or top > by2:
                     continue
-                self.hurt_flash = 0.75
-                self.play_sound(SOUND_HURT)
-                self.player.jump_anim_timer = 0
-                self.player.grounded = False
+                self.hurt_player()
                 return
 
     def beam_trap_rects(self, beam: BeamTrap, phase: int) -> list[tuple[float, float, float, float]]:
@@ -1624,12 +1908,10 @@ class OpenAgentApp:
                 continue
             if bottom < enemy.y or top > enemy.y + TILE - 1:
                 continue
-            self.hurt_flash = 0.75
-            self.play_sound(SOUND_HURT)
-            # Placeholder for lives/health until the EXE damage routine is mapped.
-            # Give immediate visual/physical feedback without ending the level.
-            self.player.jump_anim_timer = 0
-            self.player.grounded = False
+            # Generic enemy body contact routes through the hurt helper, not
+            # the hard-death tile dispatcher.  It removes one life and starts
+            # the 0x1E-tick invulnerability window.
+            self.hurt_player()
             break
 
     def current_world_level_hint(self) -> str:
@@ -1646,7 +1928,8 @@ class OpenAgentApp:
 
     def camera(self) -> tuple[int, int]:
         p = self.player
-        view_w, view_h = self.viewport_size()
+        view_w, screen_h = self.viewport_size()
+        view_h = max(1, screen_h - STATUS_BAR_H)
         max_x = max(0, LEVEL_W * TILE - view_w)
         max_y = max(0, LEVEL_H * TILE - view_h)
         x = int(min(max(p.x + PLAYER_W / 2 - view_w / 2, 0), max_x))
@@ -1660,8 +1943,11 @@ class OpenAgentApp:
         if self.level_image is None:
             return
         cam_x, cam_y = self.camera()
-        view_w, view_h = self.viewport_size()
-        frame = self.level_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + view_h)).convert("RGBA")
+        view_w, screen_h = self.viewport_size()
+        world_h = max(1, screen_h - STATUS_BAR_H)
+        world_frame = self.level_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + world_h)).convert("RGBA")
+        frame = Image.new("RGBA", (view_w, screen_h), (0, 0, 0, 255))
+        frame.alpha_composite(world_frame, (0, 0))
         draw = ImageDraw.Draw(frame)
 
         p = self.player
@@ -1680,30 +1966,17 @@ class OpenAgentApp:
             # for example raw 0xEB is a BG cell but writes cA=0x02FC.
             self.draw_player_sprite(frame, px, py)
             if self.foreground_image is not None:
-                fg = self.foreground_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + view_h))
+                fg = self.foreground_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + world_h))
                 frame.alpha_composite(fg)
             self.draw_entities(frame, cam_x, cam_y)
 
-        scaled_frame = frame.resize((view_w * self.zoom, view_h * self.zoom), Image.Resampling.NEAREST) if self.zoom != 1 else frame
+        self.draw_status_bar(frame, view_w, screen_h)
+
+        scaled_frame = frame.resize((view_w * self.zoom, screen_h * self.zoom), Image.Resampling.NEAREST) if self.zoom != 1 else frame
         out_w = max(self.canvas_w, scaled_frame.width)
-        hud = Image.new("RGBA", (out_w, HUD_H), (8, 8, 12, 255))
-        hd = ImageDraw.Draw(hud)
-        mode = "World map" if self.is_world_map else "Platform level"
-        status = (
-            f"EP {self.episode_number}/3   {mode} {self.level_index}/{self.level_count - 1}   "
-            f"View {view_w}x{view_h}@{self.zoom}x   Collision {'on' if self.collision_enabled else 'off'}   "
-            f"Score {self.score}   Ammo {self.ammo}   "
-            f"Keys {','.join(f'0x{k:02X}' for k in sorted(self.owned_keys)) or '-'}{self.current_world_level_hint()}"
-        )
-        controls = (
-            "Map: arrows/WASD move, Space/Enter opens level. Level: arrows/A-D move, Space jump, Ctrl fire. "
-            "+/- or Ctrl+wheel zoom, resize window, PgUp/PgDn level, Q/E episode, M map, R reset"
-        )
-        hd.text((8, 7), status, fill=(255, 255, 255, 255))
-        hd.text((8, 27), controls, fill=(180, 190, 210, 255))
-        out = Image.new("RGBA", (out_w, scaled_frame.height + HUD_H), (0, 0, 0, 255))
+        out_h = max(self.canvas_h, scaled_frame.height)
+        out = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
         out.alpha_composite(scaled_frame, (0, 0))
-        out.alpha_composite(hud, (0, scaled_frame.height))
 
         self.frame_photo = ImageTk.PhotoImage(out)
         self.canvas.delete("all")
@@ -1715,6 +1988,11 @@ class OpenAgentApp:
     def draw_player_sprite(self, frame: Image.Image, px: int, py: int, *, offset: tuple[int, int] = (0, 0)) -> None:
         if self.is_world_map:
             tile_ref = (13, 0)
+        elif self.player_dead_timer > 0:
+            # Player death uses the two dedicated bank-13 cels after the jump/air
+            # cels.  Toggle them during the DS:69F6 countdown; do not freeze on
+            # the last normal movement frame.
+            tile_ref = (13, PLAYER_DEATH_TILES[(self.player_death_frame_counter // 4) & 1])
         else:
             tile_ref = player_tile(
                 state=self.player.anim_state,
@@ -1722,10 +2000,41 @@ class OpenAgentApp:
             )
         tile = self.episode.tiles16.get(*tile_ref)
         if tile:
+            if not self.is_world_map:
+                tile = self.apply_player_hurt_flash(tile)
             frame.alpha_composite(tile, (px + offset[0], py + offset[1]))
             return
         draw = ImageDraw.Draw(frame)
         draw.rectangle([px, py, px + PLAYER_W - 1, py + PLAYER_H - 1], fill=(255, 220, 64, 255), outline=(0, 0, 0, 255))
+
+    def apply_player_hurt_flash(self, tile: Image.Image) -> Image.Image:
+        # SAM1:0x20F8..0x216F decrements the DS:6A42 invulnerability counter
+        # during the player draw path.  The initial hit starts a five-draw
+        # bright pulse; countdown values 0x14 and 0x0A restart it.  Derive the
+        # three pulse windows from the remaining timer so the transient visual
+        # does not need a second independently updated runtime counter.
+        remaining_ticks = math.ceil(self.hurt_flash * DOS_TICK_HZ)
+        bright = remaining_ticks > 0x19 or 0x0F < remaining_ticks <= 0x14 or 0x05 < remaining_ticks <= 0x0A
+        if not bright:
+            return tile
+        flashed = Image.new("RGBA", tile.size, (255, 255, 255, 0))
+        flashed.putalpha(tile.getchannel("A"))
+        return flashed
+
+    def apply_enemy_hit_flash(self, tile: Image.Image, enemy: Enemy) -> Image.Image:
+        # ASM evidence: every decoded non-lethal projectile-hit branch writes
+        # DS:34CC = 3.  The sprite draw path first checks DS:34CC; while it is
+        # positive it draws from an alternate bright/white cel source and
+        # decrements DS:34CC after drawing.  The decoded PNG atlas does not keep
+        # that transient white copy as a separate bank, so emulate the same
+        # visible effect by replacing non-transparent sprite pixels with white
+        # for those three draw passes.
+        if enemy.hit_flash_ticks <= 0:
+            return tile
+        flashed = Image.new("RGBA", tile.size, (255, 255, 255, 0))
+        alpha = tile.getchannel("A")
+        flashed.putalpha(alpha)
+        return flashed
 
     def draw_entities(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
         for platform in self.entities.platforms:
@@ -1737,19 +2046,39 @@ class OpenAgentApp:
             if tile:
                 frame.alpha_composite(tile, (int(satellite.x - cam_x), int(satellite.y - cam_y)))
         for enemy in self.entities.enemies:
-            multi_refs = multi_tile_actor_refs(enemy.code, enemy.direction, enemy.frame_counter)
+            if enemy.code == 0x24:
+                multi_refs = state27_actor_refs(
+                    enemy.direction,
+                    enemy.frame_counter,
+                    walking_phase=(enemy.kind == "state27_shooter" and enemy.phase_ticks > 0),
+                )
+            else:
+                multi_refs = multi_tile_actor_refs(enemy.code, enemy.direction, enemy.frame_counter)
             if multi_refs is not None:
                 for relx, rely, bank, tile_no in multi_refs:
                     tile = self.episode.tiles16.get(bank, tile_no)
                     if tile:
                         if enemy.code in {0xAE, 0x24, 0x56, 0x58, 0x63} and enemy.direction < 0:
                             tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                        tile = self.apply_enemy_hit_flash(tile, enemy)
                         frame.alpha_composite(tile, (int(enemy.x - cam_x + relx * TILE), int(enemy.y - cam_y + rely * TILE)))
                 continue
             if enemy.bank == 14 and enemy.base_tile is not None:
                 animated = bank14_guard_tile(enemy.base_tile, direction=enemy.direction, frame_counter=enemy.frame_counter)
             else:
                 animated = walker_tile(enemy.code, direction=enemy.direction, anim_time=enemy.anim_time, frame_counter=enemy.frame_counter)
+            if enemy.kind == "state2b_anim":
+                tile = self.episode.tiles16.get(*state2b_tile(enemy.frame_counter))
+                if tile:
+                    tile = self.apply_enemy_hit_flash(tile, enemy)
+                    frame.alpha_composite(tile, (int(enemy.x - cam_x), int(enemy.y - cam_y)))
+                    continue
+            if enemy.kind == "state2c_anim":
+                tile = self.episode.tiles16.get(*state2c_tile(enemy.code, enemy.frame_counter))
+                if tile:
+                    tile = self.apply_enemy_hit_flash(tile, enemy)
+                    frame.alpha_composite(tile, (int(enemy.x - cam_x), int(enemy.y - cam_y)))
+                    continue
             if animated is not None:
                 tile = self.episode.tiles16.get(*animated)
                 if tile:
@@ -1761,6 +2090,7 @@ class OpenAgentApp:
                     # same pattern for bank5 8..11.
                     if enemy.code in {0x6E, 0x7F} and enemy.direction < 0:
                         tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                    tile = self.apply_enemy_hit_flash(tile, enemy)
                     frame.alpha_composite(tile, (int(enemy.x - cam_x), int(enemy.y - cam_y)))
                     continue
             self.draw_code_sprite(frame, enemy.code, int(enemy.x - cam_x), int(enemy.y - cam_y))
@@ -1777,11 +2107,12 @@ class OpenAgentApp:
             x = int(shot.x - cam_x)
             y = int(shot.y - cam_y)
             if shot.is_impact:
-                boom_frames = (24, 25, 26, 27)
-                impact_frame = min(len(boom_frames) - 1, shot.frame_counter // 3)
-                tile = self.episode.tiles16.get(5, boom_frames[impact_frame])
-                if tile:
-                    frame.alpha_composite(tile, (x - 8, y - 8))
+                if shot.impact_visible:
+                    boom_frames = (24, 25, 26, 27)
+                    impact_frame = min(len(boom_frames) - 1, shot.frame_counter // 3)
+                    tile = self.episode.tiles16.get(5, boom_frames[impact_frame])
+                    if tile:
+                        frame.alpha_composite(tile, (x - 8, y - 8))
                 continue
             if shot.anim_tiles:
                 tile_no = shot.anim_tiles[(shot.frame_counter // 2) % len(shot.anim_tiles)]
@@ -1838,15 +2169,6 @@ class OpenAgentApp:
             if tile:
                 frame.alpha_composite(tile, (px + relx * TILE, py + rely * TILE))
 
-    def draw_world_entrance_numbers(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
-        draw = ImageDraw.Draw(frame)
-        for x, y, level in self.world_entrances():
-            sx = x * TILE - cam_x
-            sy = y * TILE - cam_y
-            view_w, view_h = self.viewport_size()
-            if -16 <= sx < view_w and -16 <= sy < view_h:
-                draw.text((sx + 1, sy + 1), str(level), fill=(0, 0, 0, 255))
-                draw.text((sx, sy), str(level), fill=(255, 255, 0, 255))
 
 
 def default_source() -> Path:

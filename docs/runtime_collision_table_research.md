@@ -60,4 +60,4 @@ cell = buffer + ((tile_x + 1) * 0xC8) + ((tile_y + 1) << 3)
 
 This changes composite-object offsets.  In particular, map byte `0xD2` now has
 `foot_solid=1` on the two upper cells `(-1,-1)` and `(0,-1)`, and not on the
-lower cells.  See `docs/exe_mechanisms_pass5.md`.
+lower cells.  See `docs/passes/exe_mechanisms_pass5.md`.

@@ -11,9 +11,9 @@ The important correction is the firing gate:
 - it is an actor, not a passive animated tile;
 - the actor must be inside the standard active 320×200 gameplay viewport;
 - it checks whether the player is underneath its column, not whether the modern resized window happens to show it;
-- when the timer expires it emits a vertical projectile/laser family.
+- when the player enters the column underneath it, it emits the vertical projectile/laser family immediately, then uses the timer as cooldown.
 
-The decoded vertical laser projectile is represented by bank 12 tiles `44..47`.  The runtime now animates that projectile family while it moves downward at the same `4 px/tick` projectile speed used by helper `0x5784`.
+The decoded vertical laser projectile is represented by bank 2 tiles `13..15`.  The runtime now animates that projectile family while it moves downward at `8 px/tick`.
 
 ## Pushable barrel (`raw 0xA7`, bank 6 tile `24`)
 

@@ -24,6 +24,22 @@ from .exe_actor_mechanics import (
     SHARK_SWIMMER_STEP_PX,
     SHARK_SWIMMER_OBJECT_ID,
     SHARK_SWIMMER_STATE,
+    STATE27_SHOOTER_CODE,
+    STATE1E_SHOOTER_CODE,
+    STATE1F_SHOOTER_CODE,
+    STATE23_CONTACT_BOMB_CODE,
+    STATE24_UP_LASER_CODE,
+    STATE2B_ANIM_CODE,
+    STATE2C_ANIM_CODES,
+    STATE2B_ANIM_PERIOD,
+    STATE2C_ANIM_PERIOD,
+    STATE29_MONEY_BAG_CODE,
+    STATE29_MONEY_BAG_IDLE_OBJECT_ID,
+    STATE06_CONTACT_FLOATER_CODE,
+    STATE17_LANDMINE_CODE,
+    STATE17_LANDMINE_IDLE_OBJECT_ID,
+    STATE17_LANDMINE_PERIOD,
+    STATE17_LANDMINE_STATE,
 )
 from .semantics import (
     BANK14_GUARD_CODES,
@@ -39,6 +55,9 @@ from .semantics import (
     WALKER_ENEMY_CODES,
     MULTI_TILE_ACTOR_CODES,
     STATIONARY_SHOOTER_CODES,
+    ANIMATED_SPECIAL_CODES,
+    STATE29_MONEY_BAG_DYNAMIC_CODES,
+    STATE17_LANDMINE_CODES,
 )
 
 from secret_agent_editor.constants import TILE
@@ -51,8 +70,8 @@ from secret_agent_editor.levels import LevelInfo
 # openagent.exe_actor_mechanics.SPECIAL_ACTOR_MODELS.
 WALKER_STEP_BY_CODE: dict[int, int] = {
     RIDING_ENEMY_CODE: SPECIAL_ACTOR_MODELS.get(RIDING_ENEMY_CODE, SPECIAL_ACTOR_MODELS[0x65]).step_px,
-    0x75: 1,  # EXE stores 0 here; this actor's full state logic is not yet implemented.
-    0x76: 1,  # EXE stores 0 here; this actor's full state logic is not yet implemented.
+    0x75: SPECIAL_ACTOR_MODELS[0x75].step_px,
+    0x76: SPECIAL_ACTOR_MODELS[0x76].step_px,
     0x6E: SPECIAL_ACTOR_MODELS[0x6E].step_px,
     0x7F: SPECIAL_ACTOR_MODELS[0x7F].step_px,
     SHARK_SWIMMER_CODE: SHARK_SWIMMER_STEP_PX,
@@ -134,10 +153,21 @@ class Enemy:
     shoot_interval_ticks: int = 0
     shoot_timer_ticks: int = 0
     alert_ticks: int = 0
+    # EXE DS:34CC.  Projectile-hit branches set this to 3; the render loop
+    # then draws the actor through an alternate white/bright sprite path and
+    # decrements it.  Keep it separate from alert_ticks, which the port uses
+    # for AI pauses and other behaviour timers.
+    hit_flash_ticks: int = 0
     kind: str = "walker"
     behavior_state: int = 0
     object_id: int = 0
     hp: int = 1
+    # Extra EXE actor timers used by states that have more than one private
+    # counter beyond the generic shooting timer. For example state 0x27/raw
+    # 0x24 uses DS:34DE as a walk/open phase timer and DS:34DC as the short
+    # stationary/open hold counter.
+    phase_ticks: int = 0
+    aux_ticks: int = 0
 
     @property
     def left(self) -> int:
@@ -231,6 +261,10 @@ class Projectile:
     frame_counter: int = 0
     owner: str = "enemy"
     impact_ticks: int = 0
+    # State 0x1388/object 0x0187 is the transient projectile-impact slot.
+    # It is visible for wall/solid impacts, but enemy hits can consume the
+    # shot without drawing the big wall spark.
+    impact_visible: bool = True
     life_ticks: int = 0
 
     @property
@@ -353,6 +387,61 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     hp=0,
                 )
             )
+        elif cell.code in ANIMATED_SPECIAL_CODES:
+            actor_model = SPECIAL_ACTOR_MODELS[cell.code]
+            period = STATE2B_ANIM_PERIOD if cell.code == STATE2B_ANIM_CODE else STATE2C_ANIM_PERIOD
+            initial_frame = (deterministic_range(cell.code, cell.x, cell.y, 1, 5, salt=6) if cell.code == STATE2B_ANIM_CODE else 1)
+            enemies.append(
+                Enemy(
+                    float(cell.x * TILE),
+                    float(cell.y * TILE),
+                    code=cell.code,
+                    direction=1,
+                    step_px=0,
+                    frame_counter=initial_frame,
+                    shoot_interval_ticks=period,
+                    shoot_timer_ticks=0,
+                    kind=("state2b_anim" if cell.code == STATE2B_ANIM_CODE else "state2c_anim"),
+                    behavior_state=actor_model.behavior_state,
+                    object_id=actor_model.object_id,
+                    hp=0,
+                )
+            )
+        elif cell.code in STATE17_LANDMINE_CODES:
+            enemies.append(
+                Enemy(
+                    float(cell.x * TILE),
+                    float(cell.y * TILE),
+                    code=cell.code,
+                    direction=1,
+                    step_px=0,
+                    frame_counter=1,
+                    shoot_interval_ticks=STATE17_LANDMINE_PERIOD,
+                    shoot_timer_ticks=0,
+                    kind="state17_landmine",
+                    behavior_state=STATE17_LANDMINE_STATE,
+                    object_id=STATE17_LANDMINE_IDLE_OBJECT_ID,
+                    hp=0,
+                )
+            )
+        elif cell.code in STATE29_MONEY_BAG_DYNAMIC_CODES:
+            actor_model = SPECIAL_ACTOR_MODELS[cell.code]
+            enemies.append(
+                Enemy(
+                    float(cell.x * TILE),
+                    float(cell.y * TILE),
+                    code=cell.code,
+                    direction=1,
+                    step_px=0,
+                    frame_counter=1,
+                    shoot_interval_ticks=0,
+                    shoot_timer_ticks=0,
+                    kind="state29_money_bag",
+                    behavior_state=actor_model.behavior_state,
+                    object_id=STATE29_MONEY_BAG_IDLE_OBJECT_ID,
+                    hp=0,
+                )
+            )
         elif cell.code in WALKER_ENEMY_CODES or cell.code in MULTI_TILE_ACTOR_CODES:
             actor_model = SPECIAL_ACTOR_MODELS.get(cell.code)
             if cell.code == SHARK_SWIMMER_CODE:
@@ -374,7 +463,7 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
             direction = deterministic_direction(cell.code, cell.x, cell.y) if actor_model and actor_model.random_initial_direction else (-1 if cell.code in {0x76} else 1)
             shoot_interval = (
                 deterministic_range(cell.code, cell.x, cell.y, actor_model.timer_min or 30, actor_model.timer_max or 49, salt=4)
-                if actor_model and cell.code in {0x63, 0x6E}
+                if actor_model and cell.code in {0x63, 0x6E, STATE27_SHOOTER_CODE, STATE24_UP_LASER_CODE, STATE1E_SHOOTER_CODE, STATE1F_SHOOTER_CODE}
                 else 0
             )
             enemies.append(
@@ -385,13 +474,45 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     direction=direction,
                     step_px=WALKER_STEP_BY_CODE.get(cell.code, 1),
                     shoot_interval_ticks=shoot_interval,
-                    shoot_timer_ticks=shoot_interval,
+                    # State 0x21 increments DS:34DA every actor tick.  If the
+                    # player is not under it when the period is reached, the EXE
+                    # decrements the timer back to period-1, leaving the shooter
+                    # armed so the next valid under-column tick fires immediately.
+                    shoot_timer_ticks=(
+                        (max(0, shoot_interval - 1)) if cell.code == 0x63
+                        # State 0x26/raw 0x6E keeps DS:34DA at zero while
+                        # DS:34DE is the long initial/pause timer.  As soon
+                        # as 34DE reaches zero, the branch checks 34DA == 0
+                        # and immediately spawns object 0x89 before starting
+                        # the active countdown.
+                        else 0 if cell.code in {STATE27_SHOOTER_CODE, 0x6E}
+                        else shoot_interval
+                    ),
                     alert_ticks=(
                         deterministic_range(cell.code, cell.x, cell.y, 100, 149, salt=5)
                         if cell.code == 0x6E
                         else 0
                     ),
-                    kind=("ceiling_laser" if cell.code == 0x63 else "lightning_flyer" if cell.code == 0x6E else "walker"),
+                    # State 0x27/raw 0x24 init at SAM1:0x12D84..0x12DC6:
+                    # DS:34D8=0x3C, DS:34DA=0, DS:34DC=3,
+                    # DS:34DE=random(0x14)+0x3C.
+                    phase_ticks=(
+                        deterministic_range(cell.code, cell.x, cell.y, 0x3C, 0x4F, salt=6)
+                        if cell.code == STATE27_SHOOTER_CODE
+                        else 0
+                    ),
+                    aux_ticks=(3 if cell.code == STATE27_SHOOTER_CODE else 0),
+                    kind=(
+                        "ceiling_laser" if cell.code == 0x63
+                        else "state1e_shooter" if cell.code == STATE1E_SHOOTER_CODE
+                        else "state1f_shooter" if cell.code == STATE1F_SHOOTER_CODE
+                        else "state27_shooter" if cell.code == STATE27_SHOOTER_CODE
+                        else "state23_contact_bomb" if cell.code == STATE23_CONTACT_BOMB_CODE
+                        else "state24_up_laser" if cell.code == STATE24_UP_LASER_CODE
+                        else "lightning_flyer" if cell.code == 0x6E
+                        else "state06_contact_floater" if cell.code == STATE06_CONTACT_FLOATER_CODE
+                        else "walker"
+                    ),
                     behavior_state=actor_model.behavior_state if actor_model else 0,
                     object_id=actor_model.object_id if actor_model else 0,
                     hp=(

@@ -1,7 +1,7 @@
 [
   {
     "exe": "SAM1",
-    "asm": "dissassembly/SAM1_unpacked_linear_8086.asm",
+    "asm": "D:\\Games\\DOS\\openagent\\dissassembly\\SAM1_unpacked_linear_8086.asm",
     "actor_struct": {
       "+0x00 / DS:34cc+slot*0x20": "actor mode/substate, written in pickup/enemy transitions",
       "+0x02 / DS:34ce+slot*0x20": "x position in pixels",
@@ -47,12 +47,13 @@
       "player_overlap_y_window": "y..y+15 in routine 0x53c4"
     },
     "jump_model": {
-      "not_gravity_integrator": "The EXE does not use a simple vy += gravity update for the upward jump/bounce phase.",
-      "start_flag": "DS:69f5 set to 1",
-      "timer_init": "DS:69f6 set to 0x23 (35 ticks)",
-      "per_tick": "decrement DS:69f6; use remaining value as word index into a displacement table; subtract that word from DS:34f0",
-      "table_reference": "word ptr [DS:69f6 + (timer << 1)] as emitted in SAM1 around 0x1ab3..0x1ac0",
-      "open_issue": "The word table lives in the program's runtime DS image/BSS-copied data; this script identifies the access pattern but does not yet reconstruct the table contents from the packed initializer path."
+      "normal_jump_start": "DS:6ec1=1 and DS:34ea=0 at SAM1 0xbced..0xbcf7",
+      "normal_jump_tick": "increment DS:34ea; subtract byte [DS:34af + DS:34ea] from DS:34f0 at SAM1 0xbd06..0xbd7e",
+      "normal_jump_apex": "when DS:34ea reaches 0x0a, clear DS:6ec1, rewind DS:34ea to 9, and still apply table[9]",
+      "normal_fall_tick": "increment/cap DS:34ea; add byte [DS:34af + DS:34ea] to DS:34f0 at SAM1 0xb8b3..0xba49",
+      "normal_table_init": "DS:34af byte table initialized at SAM1 0x28ed6..0x28f30",
+      "separate_bounce_death_start": "DS:69f5 set to 1 and DS:69f6 set to 0x23 (35 ticks)",
+      "separate_bounce_death_tick": "decrement DS:69f6; subtract word [DS:69f6 + (timer << 1)] from DS:34f0 at SAM1 0x1ab3..0x1ac0"
     },
     "evidence_spans": [
       {
@@ -64,6 +65,28 @@
           "sets left/right movement flags 6eca/6ecb and animation state 3500",
           "sets up/down/ladder-ish flags 6ec3/6ec4 and fire flag 6ecd",
           "uses configurable scan-code words at 70be/70c0/70c2/70ba/70bc/70c4"
+        ]
+      },
+      {
+        "start": "b8b3",
+        "end": "ba49",
+        "purpose": "normal mission fall path",
+        "notes": [
+          "increments byte counter 34ea and caps it to 0x13",
+          "adds byte [34af + 34ea] to player Y",
+          "checks body byte +0x1cc and later foot/platform byte +0x1cd",
+          "snaps landing Y to a 16-pixel boundary"
+        ]
+      },
+      {
+        "start": "bced",
+        "end": "bd80",
+        "purpose": "normal mission jump path",
+        "notes": [
+          "starts with 6ec1=1 and 34ea=0",
+          "increments 34ea and subtracts byte [34af + 34ea] from player Y",
+          "at counter 0x0a clears 6ec1, rewinds 34ea to 9, and still applies table[9]",
+          "uses one full-step collision probe and aborts the upward step when blocked"
         ]
       },
       {
@@ -116,7 +139,7 @@
   },
   {
     "exe": "SAM2",
-    "asm": "dissassembly/SAM2_unpacked_linear_8086.asm",
+    "asm": "D:\\Games\\DOS\\openagent\\dissassembly\\SAM2_unpacked_linear_8086.asm",
     "actor_struct": {
       "+0x00 / DS:34cc+slot*0x20": "actor mode/substate, written in pickup/enemy transitions",
       "+0x02 / DS:34ce+slot*0x20": "x position in pixels",
@@ -162,12 +185,13 @@
       "player_overlap_y_window": "y..y+15 in routine 0x53c4"
     },
     "jump_model": {
-      "not_gravity_integrator": "The EXE does not use a simple vy += gravity update for the upward jump/bounce phase.",
-      "start_flag": "DS:69f5 set to 1",
-      "timer_init": "DS:69f6 set to 0x23 (35 ticks)",
-      "per_tick": "decrement DS:69f6; use remaining value as word index into a displacement table; subtract that word from DS:34f0",
-      "table_reference": "word ptr [DS:69f6 + (timer << 1)] as emitted in SAM1 around 0x1ab3..0x1ac0",
-      "open_issue": "The word table lives in the program's runtime DS image/BSS-copied data; this script identifies the access pattern but does not yet reconstruct the table contents from the packed initializer path."
+      "normal_jump_start": "DS:6ec1=1 and DS:34ea=0 at SAM1 0xbced..0xbcf7",
+      "normal_jump_tick": "increment DS:34ea; subtract byte [DS:34af + DS:34ea] from DS:34f0 at SAM1 0xbd06..0xbd7e",
+      "normal_jump_apex": "when DS:34ea reaches 0x0a, clear DS:6ec1, rewind DS:34ea to 9, and still apply table[9]",
+      "normal_fall_tick": "increment/cap DS:34ea; add byte [DS:34af + DS:34ea] to DS:34f0 at SAM1 0xb8b3..0xba49",
+      "normal_table_init": "DS:34af byte table initialized at SAM1 0x28ed6..0x28f30",
+      "separate_bounce_death_start": "DS:69f5 set to 1 and DS:69f6 set to 0x23 (35 ticks)",
+      "separate_bounce_death_tick": "decrement DS:69f6; subtract word [DS:69f6 + (timer << 1)] from DS:34f0 at SAM1 0x1ab3..0x1ac0"
     },
     "evidence_spans": [
       {
@@ -179,6 +203,28 @@
           "sets left/right movement flags 6eca/6ecb and animation state 3500",
           "sets up/down/ladder-ish flags 6ec3/6ec4 and fire flag 6ecd",
           "uses configurable scan-code words at 70be/70c0/70c2/70ba/70bc/70c4"
+        ]
+      },
+      {
+        "start": "b8b3",
+        "end": "ba49",
+        "purpose": "normal mission fall path",
+        "notes": [
+          "increments byte counter 34ea and caps it to 0x13",
+          "adds byte [34af + 34ea] to player Y",
+          "checks body byte +0x1cc and later foot/platform byte +0x1cd",
+          "snaps landing Y to a 16-pixel boundary"
+        ]
+      },
+      {
+        "start": "bced",
+        "end": "bd80",
+        "purpose": "normal mission jump path",
+        "notes": [
+          "starts with 6ec1=1 and 34ea=0",
+          "increments 34ea and subtracts byte [34af + 34ea] from player Y",
+          "at counter 0x0a clears 6ec1, rewinds 34ea to 9, and still applies table[9]",
+          "uses one full-step collision probe and aborts the upward step when blocked"
         ]
       },
       {
@@ -231,7 +277,7 @@
   },
   {
     "exe": "SAM3",
-    "asm": "dissassembly/SAM3_unpacked_linear_8086.asm",
+    "asm": "D:\\Games\\DOS\\openagent\\dissassembly\\SAM3_unpacked_linear_8086.asm",
     "actor_struct": {
       "+0x00 / DS:34cc+slot*0x20": "actor mode/substate, written in pickup/enemy transitions",
       "+0x02 / DS:34ce+slot*0x20": "x position in pixels",
@@ -277,12 +323,13 @@
       "player_overlap_y_window": "y..y+15 in routine 0x53c4"
     },
     "jump_model": {
-      "not_gravity_integrator": "The EXE does not use a simple vy += gravity update for the upward jump/bounce phase.",
-      "start_flag": "DS:69f5 set to 1",
-      "timer_init": "DS:69f6 set to 0x23 (35 ticks)",
-      "per_tick": "decrement DS:69f6; use remaining value as word index into a displacement table; subtract that word from DS:34f0",
-      "table_reference": "word ptr [DS:69f6 + (timer << 1)] as emitted in SAM1 around 0x1ab3..0x1ac0",
-      "open_issue": "The word table lives in the program's runtime DS image/BSS-copied data; this script identifies the access pattern but does not yet reconstruct the table contents from the packed initializer path."
+      "normal_jump_start": "DS:6ec1=1 and DS:34ea=0 at SAM1 0xbced..0xbcf7",
+      "normal_jump_tick": "increment DS:34ea; subtract byte [DS:34af + DS:34ea] from DS:34f0 at SAM1 0xbd06..0xbd7e",
+      "normal_jump_apex": "when DS:34ea reaches 0x0a, clear DS:6ec1, rewind DS:34ea to 9, and still apply table[9]",
+      "normal_fall_tick": "increment/cap DS:34ea; add byte [DS:34af + DS:34ea] to DS:34f0 at SAM1 0xb8b3..0xba49",
+      "normal_table_init": "DS:34af byte table initialized at SAM1 0x28ed6..0x28f30",
+      "separate_bounce_death_start": "DS:69f5 set to 1 and DS:69f6 set to 0x23 (35 ticks)",
+      "separate_bounce_death_tick": "decrement DS:69f6; subtract word [DS:69f6 + (timer << 1)] from DS:34f0 at SAM1 0x1ab3..0x1ac0"
     },
     "evidence_spans": [
       {
@@ -294,6 +341,28 @@
           "sets left/right movement flags 6eca/6ecb and animation state 3500",
           "sets up/down/ladder-ish flags 6ec3/6ec4 and fire flag 6ecd",
           "uses configurable scan-code words at 70be/70c0/70c2/70ba/70bc/70c4"
+        ]
+      },
+      {
+        "start": "b8b3",
+        "end": "ba49",
+        "purpose": "normal mission fall path",
+        "notes": [
+          "increments byte counter 34ea and caps it to 0x13",
+          "adds byte [34af + 34ea] to player Y",
+          "checks body byte +0x1cc and later foot/platform byte +0x1cd",
+          "snaps landing Y to a 16-pixel boundary"
+        ]
+      },
+      {
+        "start": "bced",
+        "end": "bd80",
+        "purpose": "normal mission jump path",
+        "notes": [
+          "starts with 6ec1=1 and 34ea=0",
+          "increments 34ea and subtracts byte [34af + 34ea] from player Y",
+          "at counter 0x0a clears 6ec1, rewinds 34ea to 9, and still applies table[9]",
+          "uses one full-step collision probe and aborts the upward step when blocked"
         ]
       },
       {

@@ -56,7 +56,7 @@ Example `SAM101E.SND` record 0 after decrypt:
 - footer words: `priority=5`, `unknown0=5000`, `vibrate=2`,
   `unknown1=283`, `unknown2=0`
 
-See `docs/exe_mechanisms_pass36.md` for playback hooks and known sound IDs.
+See `docs/passes/exe_mechanisms_pass36.md` for playback hooks and known sound IDs.
 
 ## Filename Strings In EXEs
 

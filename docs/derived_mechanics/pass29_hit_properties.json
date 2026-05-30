@@ -34,7 +34,8 @@
       "state": "0x27",
       "kind": "actor",
       "shot_damage_class": "shootable_object_branch",
-      "hp_hint": 3,
+      "hp_hint": null,
+      "hp_note": "Spawn writes DS:34DC=3, but state 0x27 reuses DS:34DC as the open-helmet countdown; no normal 3-HP damage path is currently decoded.",
       "stationary_direction": null,
       "stationary_projectile": null
     },

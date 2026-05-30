@@ -14,11 +14,11 @@ The special actor table entry for raw `0x63` initializes an actor slot with:
 This matches the ceiling-mounted bank-12 enemy. The visible atlas family is bank 12 tiles `36..43`: two 4-frame directional loops. The runtime now treats raw `0x63` as a ceiling crawler/laser shooter instead of a generic ground walker:
 
 - moves horizontally at 2 px per DOS actor tick,
-- checks support above/ahead rather than floor below,
-- fires a downward projectile when the player is in the same tile column below it and its timer expires,
+- checks support above/ahead rather than floor below, so it reverses at the end of the ceiling track,
+- fires a downward bank-2 laser immediately when the player enters the same tile column below it, then uses the timer as cooldown,
 - uses the existing multi-hit shootable object id `0x0345` / hp hint `3`.
 
-The exact projectile object-id to decoded tile lookup for the downward laser is still a target for a later fully automated object-id renderer. The current implementation uses the bank-12 laser family and vertical projectile movement; the actor/timer/movement behaviour is wired from the EXE fields above.
+The current implementation uses the decoded bank-2 laser family `13..15` and vertical projectile movement; the actor/timer/movement behaviour is wired from the EXE fields above.
 
 ## Pushable barrel / raw `0xA7`
 

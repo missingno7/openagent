@@ -6,21 +6,21 @@ from dataclasses import dataclass
 # tools/extract_sa_animation_mechanics.py.
 
 PLAYER_ANIM_STATE_ADDR = 0x3500
-PLAYER_SHOOTING_OR_ARMED_FLAG = 0x6EC1
+PLAYER_NORMAL_JUMP_ACTIVE_FLAG = 0x6EC1
 PLAYER_LEFT_HELD_FLAG = 0x6ECA
 PLAYER_RIGHT_HELD_FLAG = 0x6ECB
-PLAYER_JUMP_ACTIVE_FLAG = 0x69F5
-PLAYER_JUMP_TIMER_ADDR = 0x69F6
+PLAYER_BOUNCE_DEATH_ACTIVE_FLAG = 0x69F5
+PLAYER_BOUNCE_DEATH_TIMER_ADDR = 0x69F6
 
 PLAYER_STATE_WALK_RIGHT = 0x01
 PLAYER_STATE_WALK_LEFT = 0x05
 PLAYER_STATE_IDLE_RIGHT = 0x09
 PLAYER_STATE_IDLE_LEFT = 0x0A
 PLAYER_STATE_RIGHT_ALT = 0x0B
-PLAYER_STATE_FIRE_RIGHT = 0x0D
-PLAYER_STATE_FIRE_LEFT = 0x0E
-PLAYER_STATE_JUMP_A = 0x0F
-PLAYER_STATE_JUMP_B = 0x10
+PLAYER_STATE_AIR_RIGHT = 0x0D
+PLAYER_STATE_AIR_LEFT = 0x0E
+PLAYER_STATE_BOUNCE_DEATH_A = 0x0F
+PLAYER_STATE_BOUNCE_DEATH_B = 0x10
 
 # The EXE does not have a simple monotonically-incrementing player walk counter
 # in the same way as actor records.  Keyboard press/release and collision paths
@@ -32,10 +32,10 @@ PLAYER_STATE_NAMES = {
     PLAYER_STATE_IDLE_RIGHT: "idle/right",
     PLAYER_STATE_IDLE_LEFT: "idle/left",
     PLAYER_STATE_RIGHT_ALT: "right alternate/collision state",
-    PLAYER_STATE_FIRE_RIGHT: "fire/right",
-    PLAYER_STATE_FIRE_LEFT: "fire/left",
-    PLAYER_STATE_JUMP_A: "jump frame A",
-    PLAYER_STATE_JUMP_B: "jump frame B",
+    PLAYER_STATE_AIR_RIGHT: "normal jump air/right",
+    PLAYER_STATE_AIR_LEFT: "normal jump air/left",
+    PLAYER_STATE_BOUNCE_DEATH_A: "bounce/death frame A",
+    PLAYER_STATE_BOUNCE_DEATH_B: "bounce/death frame B",
 }
 
 ACTOR_RECORD_SIZE = 0x20

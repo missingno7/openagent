@@ -7,14 +7,13 @@
     "timer": "random(20)+30 from special actor table",
     "fire_gate": "active 320x200 viewport + player underneath actor column",
     "projectile": {
-      "bank": 12,
+      "bank": 2,
       "tiles": [
-        44,
-        45,
-        46,
-        47
+        13,
+        14,
+        15
       ],
-      "dy_px_per_tick": 4
+      "dy_px_per_tick": 8
     }
   },
   "pushable_barrel": {

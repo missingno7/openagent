@@ -1,0 +1,530 @@
+{
+  "schema_version": 1,
+  "status_legend": {
+    "asm_verified": "Main behavior is backed by a concrete ASM branch/address and implemented to match it.",
+    "asm_partial": "Some behavior is backed by ASM, but important details are still unknown or approximated.",
+    "data_verified": "Asset/mapping details are confirmed from game data/Camoto, but runtime behavior may not be fully ASM-traced.",
+    "heuristic": "Implemented from visual testing or inferred behavior; needs ASM/data confirmation.",
+    "known_wrong": "Known to differ from the original game.",
+    "unimplemented": "Not implemented, placeholder, or prototype only."
+  },
+  "entries": [
+    {
+      "id": "hud_status_bar_8px",
+      "area": "ui",
+      "title": "8px status bar / HUD asset page",
+      "raw_codes": [],
+      "objects": [],
+      "states": [],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/hud.py",
+        "openagent/sprites.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass58.md",
+        "docs/passes/exe_mechanisms_pass59.md",
+        "docs/passes/exe_mechanisms_pass60.md",
+        "docs/passes/exe_mechanisms_pass61.md",
+        "docs/passes/exe_mechanisms_pass70.md"
+      ],
+      "asm_refs": [
+        "DS:6E32",
+        "DS:6E36",
+        "DS:6E3A",
+        "SAM1:0x18822 text renderer family"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "Exact status slot layout and all inventory icon conditions still need a full ASM pass.",
+        "Menu/table windows share the 8x8 pages but are not fully reconstructed."
+      ],
+      "next_actions": [
+        "Trace the full HUD draw routine and write a field-by-field slot map.",
+        "Build a visual HUD atlas with tile numbers for page 2 and link each icon to an ASM offset."
+      ]
+    },
+    {
+      "id": "sound_mapping_core",
+      "area": "audio",
+      "title": "Core sound effect IDs and playback mapping",
+      "raw_codes": [],
+      "objects": [],
+      "states": [],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/sound.py",
+        "openagent/runtime.py",
+        "openagent/player_lifecycle.py",
+        "openagent/combat.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass52.md",
+        "docs/passes/exe_mechanisms_pass56.md",
+        "docs/passes/exe_mechanisms_pass57.md",
+        "docs/passes/exe_mechanisms_pass62.md"
+      ],
+      "asm_refs": [
+        "sound helper call sites; see pass docs"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "Some sound IDs have been corrected, but the whole sound table is not audited.",
+        "Synthesis/pitch interpretation is still based on best current comparison, not a full PC speaker routine reconstruction."
+      ],
+      "next_actions": [
+        "Create a sound ID table with every ASM call site.",
+        "Compare generated .wav output against DOSBox capture for jump/fire/hurt/death/no-ammo."
+      ]
+    },
+    {
+      "id": "player_death_lifecycle",
+      "area": "player",
+      "title": "Player hurt/death/respawn lifecycle",
+      "raw_codes": [],
+      "objects": [],
+      "states": [],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/player_lifecycle.py",
+        "openagent/runtime.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass55.md",
+        "docs/passes/exe_mechanisms_pass57.md",
+        "docs/passes/exe_mechanisms_pass62.md",
+        "docs/passes/exe_mechanisms_pass63.md"
+      ],
+      "asm_refs": [
+        "DS:69F5",
+        "DS:69F6",
+        "DS:6A40"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "Death animation exists but exact frame sequence/state freeze semantics are not fully traced.",
+        "Level reset vs same-room respawn details need a dedicated ASM trace."
+      ],
+      "next_actions": [
+        "Trace every write to DS:69F5/DS:69F6 and life counter DS:6A40.",
+        "Add a reproducible mine/laser/enemy-shot death scenario."
+      ]
+    },
+    {
+      "id": "teleport_0x77",
+      "area": "interaction",
+      "title": "Teleporter pair behavior",
+      "raw_codes": [
+        "0x77"
+      ],
+      "objects": [
+        "0x00B7 runtime visual"
+      ],
+      "states": [],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/runtime.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass51.md",
+        "docs/passes/exe_mechanisms_pass53.md"
+      ],
+      "asm_refs": [
+        "DS:69E0",
+        "DS:69E2",
+        "DS:69E4",
+        "DS:69E6"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "Core pair search/retrigger lock implemented, but the visual warp effect and exact nudge/collision probes need deeper tracing."
+      ],
+      "next_actions": [
+        "Trace the teleport draw/effect branch and exact rearm condition.",
+        "Add a two-teleporter regression room."
+      ]
+    },
+    {
+      "id": "laser_computer_0x82_0x83",
+      "area": "interaction",
+      "title": "Laser field disabled by computer",
+      "raw_codes": [
+        "0x82",
+        "0x83",
+        "0x84"
+      ],
+      "objects": [
+        "0x025B",
+        "0x025C",
+        "0x025D"
+      ],
+      "states": [],
+      "status": "asm_verified",
+      "implemented_in": [
+        "openagent/runtime.py",
+        "openagent/collision.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass41.md",
+        "docs/passes/exe_mechanisms_pass55.md"
+      ],
+      "asm_refs": [
+        "runtime visual 0x25B/0x25C/0x25D branches"
+      ],
+      "confidence": "high",
+      "known_gaps": [
+        "Laser blink phase may still need exact draw timing validation."
+      ],
+      "next_actions": [
+        "Compare laser blink phase against DOSBox recording."
+      ]
+    },
+    {
+      "id": "landmine_0x4d",
+      "area": "hazard",
+      "title": "Landmine idle blink and instant death trigger",
+      "raw_codes": [
+        "0x4D"
+      ],
+      "objects": [
+        "0x0270",
+        "0x0271"
+      ],
+      "states": [
+        "0x17"
+      ],
+      "status": "asm_verified",
+      "implemented_in": [
+        "openagent/runtime.py",
+        "openagent/player_lifecycle.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass53.md",
+        "docs/passes/exe_mechanisms_pass54.md",
+        "docs/passes/exe_mechanisms_pass63.md"
+      ],
+      "asm_refs": [
+        "SAM1:0xD0B1",
+        "DS:69F5",
+        "DS:69F6"
+      ],
+      "confidence": "high",
+      "known_gaps": [
+        "Triggered explosion visual timing should still be compared frame-by-frame."
+      ],
+      "next_actions": [
+        "Capture original mine sequence and validate idle blink period + triggered animation frames."
+      ]
+    },
+    {
+      "id": "dynamite_exit_0x74_0x71",
+      "area": "level_exit",
+      "title": "Dynamite pickup and destructible exit door",
+      "raw_codes": [
+        "0x74",
+        "0x71"
+      ],
+      "objects": [
+        "0x027B",
+        "0x0279",
+        "0x027A",
+        "0x027D",
+        "0x027E"
+      ],
+      "states": [
+        "0x16"
+      ],
+      "status": "asm_verified",
+      "implemented_in": [
+        "openagent/runtime.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass66.md",
+        "docs/passes/exe_mechanisms_pass67.md",
+        "docs/passes/exe_mechanisms_pass68.md"
+      ],
+      "asm_refs": [
+        "SAM1:0x7490..0x7523",
+        "SAM1:0xCB72..0xCBE5"
+      ],
+      "confidence": "high",
+      "known_gaps": [
+        "Exit-level completion transition and overworld return flags need full trace."
+      ],
+      "next_actions": [
+        "Trace what happens after stepping through broken exit and how overworld completion is stored."
+      ]
+    },
+    {
+      "id": "enemy_0x24_helmet",
+      "area": "enemy",
+      "title": "Helmet enemy vulnerable only while open",
+      "raw_codes": [
+        "0x24"
+      ],
+      "objects": [
+        "0x0065",
+        "0x033B projectile"
+      ],
+      "states": [
+        "0x27"
+      ],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/runtime.py",
+        "openagent/combat.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass46.md",
+        "docs/passes/exe_mechanisms_pass47.md",
+        "docs/passes/exe_mechanisms_pass48.md",
+        "docs/passes/exe_mechanisms_pass49.md",
+        "docs/passes/exe_mechanisms_pass54.md"
+      ],
+      "asm_refs": [
+        "object 0x0065 state 0x27",
+        "DS:34DC",
+        "DS:34DE",
+        "DS:34D8",
+        "DS:34DA"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "The independent upper/lower sprite animation needs a final frame-by-frame validation.",
+        "Projectile spawn position and exact open/closed frame choices should be compared against original."
+      ],
+      "next_actions": [
+        "Move 0x24 into a named enemy state module with ASM comments.",
+        "Record one full open/closed cycle and compare frame timings."
+      ]
+    },
+    {
+      "id": "enemy_0x63_ceiling_laser",
+      "area": "enemy",
+      "title": "Ceiling crawler laser shooter",
+      "raw_codes": [
+        "0x63"
+      ],
+      "objects": [
+        "0x00C7",
+        "0x72 laser actor"
+      ],
+      "states": [
+        "0x21",
+        "0x89"
+      ],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/runtime.py",
+        "openagent/combat.py"
+      ],
+      "evidence": [
+        "earlier 0x63 fix notes",
+        "docs/MECHANICS_INDEX.md"
+      ],
+      "asm_refs": [
+        "state 0x21",
+        "SAM1:0x98D9..0x9AB6 noted in prior handoff"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "This was revised several times; it needs a fresh single-source ASM note with exact movement and firing gates.",
+        "Ceiling support probe and edge turnaround should be validated against original."
+      ],
+      "next_actions": [
+        "Create a dedicated docs/passes/0x63 audit note from the current disassembly.",
+        "Add a tiny ceiling-track test scenario."
+      ]
+    },
+    {
+      "id": "enemy_0xae_dog",
+      "area": "enemy",
+      "title": "Dog direction animation and hit behavior",
+      "raw_codes": [
+        "0xAE"
+      ],
+      "objects": [],
+      "states": [
+        "0x2A"
+      ],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/runtime.py",
+        "openagent/combat.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass54.md"
+      ],
+      "asm_refs": [
+        "state 0x2A",
+        "right frames 0x01..0x13",
+        "left frames 0x29..0x3B"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "Movement AI and exact reaction to player hit still need more ASM cross-check."
+      ],
+      "next_actions": [
+        "Trace complete state 0x2A update branch and hit branch."
+      ]
+    },
+    {
+      "id": "projectile_policy",
+      "area": "combat",
+      "title": "Player/enemy projectile impact and hit policy",
+      "raw_codes": [],
+      "objects": [
+        "0x0187 impact-like",
+        "0x0339",
+        "0x033B",
+        "0x0089 lightning"
+      ],
+      "states": [],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/combat.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass64.md"
+      ],
+      "asm_refs": [
+        "SAM1:0x4EDD..0x4F94",
+        "SAM1:0x5C30..0x5C82"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "Impact spark vs silent consumption is only partially separated.",
+        "Enemy projectile subclasses are not fully mapped."
+      ],
+      "next_actions": [
+        "Build a projectile object/state table and attach each spawn helper call site.",
+        "Verify wall-hit, enemy-hit, player-hit, and timeout behavior separately."
+      ]
+    },
+    {
+      "id": "animated_decor_tiles",
+      "area": "animation",
+      "title": "Animated decorations and hazards",
+      "raw_codes": [
+        "0x40",
+        "0x78",
+        "0xD4"
+      ],
+      "objects": [
+        "0x0131",
+        "0x0103",
+        "0x0135"
+      ],
+      "states": [
+        "0x2B",
+        "0x2C"
+      ],
+      "status": "heuristic",
+      "implemented_in": [
+        "openagent/runtime.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass43.md",
+        "docs/passes/exe_mechanisms_pass53.md",
+        "docs/passes/exe_mechanisms_pass54.md"
+      ],
+      "asm_refs": [
+        "state 0x2B",
+        "state 0x2C"
+      ],
+      "confidence": "low",
+      "known_gaps": [
+        "User already caught wrong frame counts for D4-like decorations.",
+        "Need a data-driven animation table instead of hardcoded frame guesses."
+      ],
+      "next_actions": [
+        "Audit each animated raw tile against 16x16 assets and ASM frame writes.",
+        "Create a per-object animation frame registry with status fields."
+      ]
+    },
+    {
+      "id": "player_mission_movement",
+      "area": "player",
+      "title": "Normal mission horizontal movement, jump, and fall",
+      "raw_codes": [],
+      "objects": [],
+      "states": [],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/player_motion.py",
+        "openagent/runtime.py",
+        "openagent/game_constants.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass9.md",
+        "docs/passes/exe_mechanisms_pass12.md",
+        "docs/passes/exe_mechanisms_pass80.md",
+        "docs/passes/exe_mechanisms_pass81.md",
+        "docs/passes/exe_mechanisms_pass82.md",
+        "docs/passes/exe_mechanisms_pass83.md"
+      ],
+      "asm_refs": [
+        "SAM1:0x532D..0x53C0",
+        "SAM1:0xB7D9..0xB8A4",
+        "SAM1:0xB8B3..0xBA49",
+        "SAM1:0xBCED..0xBD80",
+        "DS:681E",
+        "DS:34AF",
+        "DS:34EA",
+        "DS:6EC1"
+      ],
+      "confidence": "medium",
+      "known_gaps": [
+        "Static one-way foot collision is still broader than SAM1:0xB957..0xBA30: the EXE gates +0x1CD probes behind DS:34EA > 0x0A and uses offset-specific samples.",
+        "Moving-platform landing now uses an atomic downward crossing interval, but the original dynamic actor/player overlap branch for raw 0x62 still needs isolation.",
+        "Pushable-barrel overlap still uses a reconstructed pixel-granular fallback because raw 0xA7 has a separate actor interaction path.",
+        "Ladder/direct vertical movement flags DS:6EC3/DS:6EC4 are not implemented.",
+        "Difficulty modifiers DS:69B0/DS:69A4 beyond the normal path are not modeled."
+      ],
+      "next_actions": [
+        "Trace and reproduce the offset-specific static +0x1CD probes in SAM1:0xB957..0xBA30.",
+        "Isolate the raw-0x62 dynamic actor/player overlap branch and compare it with the crossing reconstruction.",
+        "Trace the full raw-0xA7 actor overlap path and replace its reconstructed pixel fallback.",
+        "Trace and implement ladder/direct vertical movement.",
+        "Add deterministic room probes for wall approach, ledge fall, ceiling hit, and landing."
+      ]
+    },
+    {
+      "id": "overworld_logic",
+      "area": "overworld",
+      "title": "Overworld map, entrances, completion flags, popups",
+      "raw_codes": [],
+      "objects": [],
+      "states": [],
+      "status": "heuristic",
+      "implemented_in": [
+        "openagent/overworld.py",
+        "openagent/runtime.py",
+        "tools/audit_overworld_data.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass70.md",
+        "docs/passes/exe_mechanisms_pass77.md",
+        "docs/OVERWORLD_RESEARCH.md",
+        "docs/passes/exe_mechanisms_pass78.md",
+        "docs/registry/overworld_level0_inventory.json"
+      ],
+      "asm_refs": [
+        "not yet isolated; needs dedicated level-0 movement/collision/entrance trace"
+      ],
+      "confidence": "low",
+      "known_gaps": [
+        "Raw level-0 marker inventory is now reproducible via tools/audit_overworld_data.py.",
+        "Data facts for 0x59 and 0x4D/0x4F/0x50 are confirmed, but collision remains heuristic.",
+        "Entrance-to-level mapping is row-major prototype behavior, not ASM-verified.",
+        "Completion flags and original popup/table windows are not implemented."
+      ],
+      "next_actions": [
+        "Trace the EXE top-down world-map movement routine.",
+        "Recover the original world-map collision table or predicate.",
+        "Trace entrance marker handling and completed-level flags.",
+        "Separate original popup/table renderer from prototype entrance-number overlay."
+      ]
+    }
+  ]
+}

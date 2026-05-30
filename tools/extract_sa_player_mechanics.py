@@ -6,7 +6,8 @@ already identified while reverse-engineering SAM1/SAM2/SAM3:
 
 * the map-buffer collision probe routine that tests +0x1cc/+0x1cd;
 * player globals and the keyboard ISR flags;
-* the table-driven jump/bounce path that starts with flag 0x69f5/timer 0x69f6.
+* the normal mission jump/fall path driven by 0x6ec1/0x34ea/0x34af;
+* the distinct table-driven bounce/death path driven by 0x69f5/0x69f6.
 
 The output is intended to be checked into docs/derived_mechanics so later editor
 runtime code can be driven by EXE evidence rather than ad-hoc constants.
@@ -79,6 +80,24 @@ def report_for_asm(asm_path: Path) -> MechanicReport:
                 "sets left/right movement flags 6eca/6ecb and animation state 3500",
                 "sets up/down/ladder-ish flags 6ec3/6ec4 and fire flag 6ecd",
                 "uses configurable scan-code words at 70be/70c0/70c2/70ba/70bc/70c4",
+            ],
+        ),
+        EvidenceSpan(
+            "b8b3", "ba49", "normal mission fall path",
+            [
+                "increments byte counter 34ea and caps it to 0x13",
+                "adds byte [34af + 34ea] to player Y",
+                "checks body byte +0x1cc and later foot/platform byte +0x1cd",
+                "snaps landing Y to a 16-pixel boundary",
+            ],
+        ),
+        EvidenceSpan(
+            "bced", "bd80", "normal mission jump path",
+            [
+                "starts with 6ec1=1 and 34ea=0",
+                "increments 34ea and subtracts byte [34af + 34ea] from player Y",
+                "at counter 0x0a clears 6ec1, rewinds 34ea to 9, and still applies table[9]",
+                "uses one full-step collision probe and aborts the upward step when blocked",
             ],
         ),
         EvidenceSpan(
@@ -168,12 +187,13 @@ def report_for_asm(asm_path: Path) -> MechanicReport:
             "player_overlap_y_window": "y..y+15 in routine 0x53c4",
         },
         jump_model={
-            "not_gravity_integrator": "The EXE does not use a simple vy += gravity update for the upward jump/bounce phase.",
-            "start_flag": "DS:69f5 set to 1",
-            "timer_init": "DS:69f6 set to 0x23 (35 ticks)",
-            "per_tick": "decrement DS:69f6; use remaining value as word index into a displacement table; subtract that word from DS:34f0",
-            "table_reference": "word ptr [DS:69f6 + (timer << 1)] as emitted in SAM1 around 0x1ab3..0x1ac0",
-            "open_issue": "The word table lives in the program's runtime DS image/BSS-copied data; this script identifies the access pattern but does not yet reconstruct the table contents from the packed initializer path.",
+            "normal_jump_start": "DS:6ec1=1 and DS:34ea=0 at SAM1 0xbced..0xbcf7",
+            "normal_jump_tick": "increment DS:34ea; subtract byte [DS:34af + DS:34ea] from DS:34f0 at SAM1 0xbd06..0xbd7e",
+            "normal_jump_apex": "when DS:34ea reaches 0x0a, clear DS:6ec1, rewind DS:34ea to 9, and still apply table[9]",
+            "normal_fall_tick": "increment/cap DS:34ea; add byte [DS:34af + DS:34ea] to DS:34f0 at SAM1 0xb8b3..0xba49",
+            "normal_table_init": "DS:34af byte table initialized at SAM1 0x28ed6..0x28f30",
+            "separate_bounce_death_start": "DS:69f5 set to 1 and DS:69f6 set to 0x23 (35 ticks)",
+            "separate_bounce_death_tick": "decrement DS:69f6; subtract word [DS:69f6 + (timer << 1)] from DS:34f0 at SAM1 0x1ab3..0x1ac0",
         },
         evidence_spans=spans,
     )

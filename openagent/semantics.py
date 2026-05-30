@@ -38,6 +38,15 @@ SPIKE_TRAP_CODES = frozenset({FLOOR_SPIKE_CODE, CEILING_SPIKE_CODE})
 BEAM_VERTICAL_CODE = 0x3B
 BEAM_HORIZONTAL_CODE = 0x3E
 BEAM_TRAP_CODES = frozenset({BEAM_VERTICAL_CODE, BEAM_HORIZONTAL_CODE})
+LASER_FIELD_CODE = 0x82
+LASER_COMPUTER_CODE = 0x83
+FLOPPY_DISK_CODE = 0x84
+DYNAMITE_CODE = 0x74
+EXIT_DOOR_CODE = 0x71
+EXIT_DOOR_RUNTIME_VISUAL = 0x027D
+EXIT_DOOR_OPEN_RUNTIME_VISUAL = 0x027E
+TELEPORTER_CODE = 0x77
+TELEPORT_RUNTIME_VISUAL = 0x00B7
 # Bank-14 human guard family.  These raw map bytes are not normal static
 # sprites: the EXE special-low actor table creates actor records for them and
 # the active sprite lives in actor field DS:34E0, not in the runtime cell.
@@ -87,7 +96,7 @@ EXE_SCORE_PICKUP_VALUES: dict[int, int] = {
     0x50: 2000,
     0x54: 1000,
     0x57: 250,
-    0x5B: 1000,  # same visible money-bag sprite as 0x01 in current maps
+    0x5B: 1000,  # historical/static fallback; runtime state 0x29 actor awards 5000
     0x5C: 500,
     0x5D: 100,
     0x64: 1000,
@@ -148,12 +157,35 @@ MISSION_CODE_SEMANTICS: dict[int, CodeSemantics] = {
         bank=5,
         tile=4,
     ),
+
+    TELEPORTER_CODE: CodeSemantics(
+        "teleporter",
+        "paired teleporter",
+        "EXE interaction dispatcher SAM1:0xD48B compares runtime visual 0x00B7, plays sound 0x17, scans the runtime map for a second 0x00B7, then warps through DS:69E0/69E2/69E4/69E6.",
+        bank=10,
+        tile=32,
+    ),
     0xA7: CodeSemantics(
         "pushable",
         "pushable barrel",
         "User hint plus manual string 'Pushable barrel.' in all three extracted string files.",
         bank=6,
         tile=24,
+    ),
+
+    DYNAMITE_CODE: CodeSemantics(
+        "dynamite",
+        "dynamite",
+        "EXE interaction dispatcher: runtime visual 0x027B sets DS:69F4=1, clears the cell, plays sound 0x05, awards 500 points with popup arg 0x13.",
+        bank=10,
+        tile=28,
+    ),
+    EXIT_DOOR_CODE: CodeSemantics(
+        "exit_door",
+        "level exit door",
+        "Raw 0x71 writes runtime visuals 0x0279/0x027D. Touching 0x027D with DS:69F4 dynamite set consumes it, plays sound 0x0B and spawns object 0x027B/state 0x16; when the blast timer completes the actor branch rewrites lower visual 0x027D to passable 0x027E and rewrites the upper 0x0279 cell to layer-B visual 0x027A, clearing collision for both rather than deleting the door.",
+        bank=10,
+        tile=29,
     ),
     0x73: CodeSemantics(
         "ammo",
@@ -222,7 +254,7 @@ MISSION_CODE_SEMANTICS: dict[int, CodeSemantics] = {
 MISSION_PASSABLE_OBJECT_CODES = frozenset(
     code
     for code, semantics in MISSION_CODE_SEMANTICS.items()
-    if semantics.kind in {"player_start", "moving_platform", "enemy", "score_item", "ammo", "key"}
+    if semantics.kind in {"player_start", "moving_platform", "enemy", "score_item", "ammo", "key", "dynamite"}
 )
 
 # Runtime collision is now derived from the executable's map-token -> runtime-cell
@@ -240,7 +272,10 @@ MISSION_PASSABLE_CODES = frozenset(
     if code_known_to_exe_collision_table(code)
     and not exe_code_has_body_solid(code)
 )
-DYNAMIC_MISSION_CODES = frozenset({MISSION_PLAYER_START_CODE, MOVING_PLATFORM_CODE, ROTATING_SATELLITE_CODE, PUSHABLE_BARREL_CODE}) | WALKER_ENEMY_CODES | MULTI_TILE_ACTOR_CODES | STATIONARY_SHOOTER_CODES | BANK14_GUARD_CODES | SPIKE_TRAP_CODES | BEAM_TRAP_CODES
+ANIMATED_SPECIAL_CODES = frozenset({0x40, 0xD4, 0x78})
+STATE17_LANDMINE_CODES = frozenset({0x4D})
+STATE29_MONEY_BAG_DYNAMIC_CODES = frozenset({0x5B})
+DYNAMIC_MISSION_CODES = frozenset({MISSION_PLAYER_START_CODE, MOVING_PLATFORM_CODE, ROTATING_SATELLITE_CODE, PUSHABLE_BARREL_CODE}) | WALKER_ENEMY_CODES | MULTI_TILE_ACTOR_CODES | STATIONARY_SHOOTER_CODES | BANK14_GUARD_CODES | SPIKE_TRAP_CODES | BEAM_TRAP_CODES | ANIMATED_SPECIAL_CODES | STATE29_MONEY_BAG_DYNAMIC_CODES | STATE17_LANDMINE_CODES
 
 
 def mission_code_semantics(code: int) -> CodeSemantics | None:
@@ -261,11 +296,15 @@ def score_popup_tile_for_value(value: int) -> int | None:
 
 
 def is_collectible_code(code: int) -> bool:
-    return code in EXE_SCORE_PICKUP_VALUES or mission_code_kind(code) in {"score_item", "ammo", "key", "glasses"}
+    return code in EXE_SCORE_PICKUP_VALUES or mission_code_kind(code) in {"score_item", "ammo", "key", "glasses", "dynamite"}
 
 
 def is_door_code(code: int) -> bool:
     return mission_code_kind(code) == "door"
+
+
+def is_exit_door_code(code: int) -> bool:
+    return mission_code_kind(code) == "exit_door"
 
 
 def door_unlocked_by(code: int) -> int | None:

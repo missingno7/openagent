@@ -1,6 +1,6 @@
 # EXE Mechanism Pass Summary
 
-This document condenses `docs/exe_mechanisms_pass*.md` and related collision
+This document condenses `docs/passes/exe_mechanisms_pass*.md` and related collision
 passes.  The individual pass files are raw research logs; this file says which
 conclusion survived cleanup.
 
@@ -99,3 +99,49 @@ tiles form a four-frame-looking block.
 - Older docs that say "heuristic" or "visual footprint" should point at the
   runtime-cell model unless they are explicitly describing prototype fallback or
   historical mistakes.
+
+| 41 | Re-verified raw `0x63` against state `0x21` at SAM1:0x98d9..0x9ab6; corrected timer arming, under-column gate, and ceiling-track edge probe. |
+| 42 | Raw `0x75` is a state-0x23 contact bomb; raw `0x76` is a state-0x24 upward laser emitter. |
+
+| 43 | Raw `0x40`, `0xD4`, and `0x78` promoted as state `0x2B/0x2C` animated actors; `0x78` gets contact hazard handling. |
+| 44 | Raw `0x5B` promoted from static money-bag pickup to state `0x29` dynamic falling money bag actor awarding 5000 points. |
+| 45 | Raw `0x56` and `0x58` promoted from first-pass walkers to state `0x1E/0x1F` two-high bank-12 shooters; composite hitboxes for `0x24/0x56/0x58` corrected to vertical two-tile actors. |
+| 46 | Raw `0x24` / object `0x0065` / state `0x27` rechecked against SAM1:0x12CB2..0x12DC6 and SAM1:0xA89F..0xAFBF. It now uses EXE timers `DA/D8/DC/DE`, direct `0x033B` projectile spawn coordinates, and its non-generic frame ranges `0x01..0x13` / `0xC9..0xDB`. |
+| 47 | Raw `0x24` damage behaviour verified: object `0x0065` only dies in the state-`0x27` open/stopped phase (`DS:34DE == 0`). Closed-helmet hits now ping without HP loss; open-helmet hits kill for 1000 points. |
+| 49 | Projectile-hit white flash verified: hit branches set `DS:34CC = 3`; the draw loop uses the bright/white draw path while `34CC > 0` and decrements it after drawing. Runtime now mirrors this as `Enemy.hit_flash_ticks`. |
+
+
+## Pass 48
+
+Audited raw `0x24` / object `0x0065` HP.  The init value `DS:34DC = 3` is not treated as normal HP because state `0x27` reuses the same field as the open-helmet countdown. Removed the misleading generic `0x0065: 3` HP hint and documented the uncertainty.
+| 50 | Raw `0x7F` / object `0x0261` / state `0x06` rechecked against `SAM1:0x6864..0x6A21`; it is now a side-collision contact floater/hazard instead of a generic ground walker with floor-ahead ledge logic. |
+
+## Pass 51
+- Implemented paired teleporters (`0x77`, runtime visual `0x00B7`) from ASM dispatcher `SAM1:0xD48B..0xD5E8` and main-loop state `DS:69E0/69E2/69E4/69E6`.
+- Teleporters work in missions and on overworld maps; trigger alignment, 19 tick delay, target scan, and `±3 px` destination nudge are documented.
+| 52 | Continued sound pass: confirmed player jump sound `0x01`, raw `0x5B` falling-bag/drop sound `0x09`, named teleport sound `0x17`, and documented but did not hook the unproven startup/level-entry candidate `0x15`. |
+| 53 | Fixed teleport re-entry by requiring the player to leave the destination pad before another `0x77` warp can arm; corrected PC-speaker sound ids to one-based SND indexing; limited raw `0xD4` to its two-frame bank-9 `8..9` animation; implemented raw `0x4D` as the mission landmine (`0x0270` idle -> `0x0271`/state `0x17`). |
+
+| 54 | Raw `0x4D` armed mine is a two-frame idle animated object until triggered; raw `0x24` keeps its helmet closed while walking and animates the top only in the stopped/open phase; raw `0xAE` dog now uses state-0x2A left frame range `0x29..0x3B` and no longer turns from generic hit fallback. |
+| 55 | HUD/status bar moved into the 320x200 frame; score/ammo/lives are backed by ASM fields (`DS:699A/699C`, `DS:6858`, `DS:6A40`). Generic hurt now decrements lives with a 0x1E-tick invulnerability window; hard-death hazards such as raw `0x82` lasers and armed `0x4D` mines set death state directly. |
+
+| 56 | HUD/status bar corrected to the original 8px in-frame strip; mine death respawn crash fixed by adding real `spawn_player()`; PC speaker synthesis now treats SND values as PIT divisors (`1193182 / value`) instead of direct Hz. |
+
+| 57 | Reverted PC-speaker synthesis from the bad PIT-divisor assumption back to direct decoded SND pitch words; audited the real HUD DS:6E32 8x8-cell offsets and marked current masks as temporary; added player death animation countdown using bank-13 tiles 14/15 instead of freezing on death. |
+| 58 | Decoded the real small HUD/menu asset `SAM?02.GFX` as 8x8 masked EGA cells, fixed the missing `PLAYER_DEATH_TILES` import that crashed the death draw path, and changed the bottom HUD strip to draw digits/life icon from original game pixels instead of temporary PIL masks. |
+| 59 | Corrected the SAM?02.GFX decoder to match the Camoto/ModdingWiki 2k 8x8 sprite format: no 3-byte header, 50 * 40-byte masked EGA cells plus 48 bytes padding. HUD digits now use the corrected original UI font cells instead of the previously phase-shifted/noisy decode. |
+
+| 60 | Reverted the bad pass59 SAM?02.GFX no-header decode.  Cross-checked Camoto Studio XML with libgamegraphics/libgamearchive source and the HUD ASM: SAM?02.GFX is a headered tls-sagent-2k block (`50,1,8` header, 50 * 40-byte EGA sprites, 45 bytes padding). HUD digits map to set 0 tiles 0..9 and the life icon to set 0 tile 11. |
+| 61 | Fixed HUD 8x8 sprite page selection: Camoto + ASM loader cross-check shows DS:6E32 points at the third SAM?02.GFX 0x800 block, so score/ammo digits and fixed HUD icons must use tiles8 bank 2, not bank 0. |
+| 63 | Re-audited raw `0x4D` landmine against `SAM1:0xD0B1..0xD21E` and `0x7782..0x78C1`: stepping on idle object `0x0270` now kills immediately while spawning object `0x0271/state 0x17`; the later frame-`0x0B` hazard remains as secondary explosion contact. Idle mine blink now uses the ASM two-frame `floor(DS:34D6/5)` timing and wraps after frame 9. |
+| 65 | Audited player ammo against ASM: new-game init sets `DS:6858 = 5`; raw `0x73`/runtime `0x012D` extra-shots pickup adds `+5`, clamps to `0x63` (99), and plays sound `0x05`. Runtime now starts with five shots and caps ammo/HUD at 99. |
+| 66 | Implemented raw `0x74` dynamite and raw `0x71` exit-door flow: `0x027B` pickup sets DS:69F4 and awards 500; `0x027D` door consumes dynamite, plays sound 0x0B, runs a 0x28-tick blast, then opens for level exit. |
+| 67 | Corrected post-dynamite exit door: ASM rewrites lower visual 0x027D to passable 0x027E and leaves upper 0x0279 visible, so runtime now draws a broken/open door instead of deleting the whole raw 0x71 footprint. |
+| 68 | Corrected the post-dynamite exit door again: ASM `SAM1:0x74D0..0x7523` also rewrites the upper cell from `0x0279` to layer-B visual `0x027A` and clears its collision, so the opened door now draws broken top bank5 tile 33 plus broken/passable lower bank5 tile 37. |
+| 69 | Corrected raw `0x6E`/state `0x26` lightning flyer cadence from ASM: `DS:34DE` is the no-movement pause timer, while `DS:34DA == 0` spawns object `0x0089` immediately on the first active tick, then counts to `DS:34D8` before reloading a `0x6E` pause. |
+| 70 | Cross-checked Camoto Studio secret-agent.xml and ASM text renderer. Split SAM?02.GFX usage into DS:6E36/6E3A menu-table text pages and DS:6E32 HUD page; added a real 8x8 UI text renderer and removed PIL text from the prototype overworld entrance overlay. |
+| 79 | Fixed the pass-74 combat extraction regression by importing `actor_walk_counter_next()` in `combat.py`; added the ASM-backed three-pulse white player hurt visual during the `DS:6A42 = 0x1E` invulnerability window. |
+| 80 | Re-audited normal mission movement: preserved `DS:681E` acceleration across direction changes, reset it after blocked movement, fixed the missing one-pixel jump-apex tick, extracted pure tick transitions into `player_motion.py`, and corrected ordinary-jump state IDs to `0x0D/0x0E`. |
+| 81 | Corrected normal fall lifetime and ordering: `DS:34EA` now starts at `0x12`, remains capped across landings, standing ticks run the `B8B3` fall pass before jump acceptance, downward displacement is atomic, and opposite Tk direction keys now mirror the ISR's mutually-exclusive flags. |
+| 82 | Normal horizontal mission movement now probes the complete `DS:6820` destination step atomically like `SAM1:0xB7D9`; pixel-granular movement remains only as a reconstruction fallback for special raw-`0xA7` barrel overlap. |
+| 83 | Fixed dynamic moving-platform landings after atomic fall conversion: player/platform and player/barrel top contacts now use a full downward crossing interval, so an `8 px/tick` fall cannot skip the surface. Re-audited `SAM1:0xB8B3..0xBA49` and recorded the remaining static one-way `+0x1CD` probe-order gap. |
