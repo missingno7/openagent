@@ -1,7 +1,7 @@
 artifacts
 dissassembly
 game_data
-secret_agent_editor
 OpenCrystalCaves
 __pycache__/
 *.pyc
+.idea
