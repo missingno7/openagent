@@ -23,7 +23,7 @@ MOVING_PLATFORM_CODE = 0x62
 ROTATING_SATELLITE_CODE = 0x23
 PUSHABLE_BARREL_CODE = 0xA7
 RIDING_ENEMY_CODE = 0x65
-WALKER_ENEMY_CODES = frozenset({0x65, 0x6E, 0x75, 0x76, 0x7F, 0x5F})
+WALKER_ENEMY_CODES = frozenset({0x65, 0x6E, 0x75, 0x76, 0x7F, 0x5F, 0x6D})
 # Multi-tile actors recovered from the same EXE special actor table.  They are
 # not static composite scenery; the object id lives in DS:34E0 and the actor
 # update branch moves/animates them.
@@ -143,6 +143,13 @@ MISSION_CODE_SEMANTICS: dict[int, CodeSemantics] = {
         "User hint; atlas shows a small enemy; EXE compares/writes literal 0x65 in all three SAM binaries.",
         bank=2,
         tile=16,
+    ),
+    0x6D: CodeSemantics(
+        "enemy",
+        "fire walker",
+        "Raw 0x6D is the bank-3 44..47 fire actor: a live horizontal contact hazard, not a projectile-damage target.",
+        bank=3,
+        tile=44,
     ),
     0x5B: CodeSemantics(
         "score_item",

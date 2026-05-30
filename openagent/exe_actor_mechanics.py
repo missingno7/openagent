@@ -57,6 +57,20 @@ SHARK_SWIMMER_STEP_PX = 2
 SHARK_SWIMMER_OBJECT_ID = 0x01EF
 SHARK_SWIMMER_STATE = 0x28
 
+# Raw 0x6D is the bank-3 fire walker (tiles 44..47).  It is a live actor
+# contact hazard that patrols horizontally, but it is absent from the player
+# projectile damage filter, so shots should not kill or flash it.
+FIRE_WALKER_CODE = 0x6D
+FIRE_WALKER_STEP_PX = 2
+FIRE_WALKER_STATE = 0x06
+
+# Raw 0x23 / object 0x0097 is a rotating satellite.  Its actor init sets
+# state 0x20 and a 3-tick animation period.  The projectile branch treats it
+# as a score target but it is not part of the player-contact damage path.
+SATELLITE_OBJECT_ID = 0x0097
+SATELLITE_HP = 3
+SATELLITE_SCORE = 100
+
 # Projectile/player-shot interaction filter recovered from the actor-hit
 # dispatcher around SAM1:0x4BD2..0x4ED5.  It does not treat every actor slot as
 # damageable.  The code branches on DS:34E0 (object id):

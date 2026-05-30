@@ -113,6 +113,9 @@ WALKER_ANIMATIONS: dict[int, WalkerAnimation] = {
     # raw 0x5F -> bank 4 shark swimmer.  The decoded bank is directional,
     # not mirrored: 46/47 swim right, 44/45 swim left.
     0x5F: WalkerAnimation(4, (46, 47), (44, 45)),
+    # raw 0x6D is the bank-3 fire walker.  It is a contact hazard that
+    # patrols like the small walkers but is not in the projectile damage set.
+    0x6D: WalkerAnimation(3, (44, 45, 46, 47), (44, 45, 46, 47)),
     # raw 0xAE -> object id 0x0353, bank 0 composite.  TILE_MAP shows the
     # standing object as two side-by-side tiles (0,4).  The surrounding bank-0
     # tiles are the animation phases in groups of four.
@@ -244,17 +247,32 @@ def state1f_frame_index(frame_counter: int, *, direction: int) -> int:
     return max(0, min(3, (max(start, frame_counter) - start) // 5))
 
 
-def state1f_actor_refs(direction: int, frame_counter: int) -> tuple[tuple[int, int, int, int], ...]:
+def state1f_is_vulnerable(direction: int, frame_counter: int, *, walking_phase: bool) -> bool:
+    """Return whether raw 0x58/state 0x1F exposes its damageable top.
+
+    The lower body walks through all four cels, but the top cover remains
+    closed while DS:34DE is non-zero.  The object-specific hit branch only
+    allows damage once the stopped/open phase has clamped to its final frame:
+    bank12 tile 19 when facing left, tile 31 when facing right.
+    """
+    return (not walking_phase) and state1f_frame_index(frame_counter, direction=direction) >= 3
+
+
+def state1f_actor_refs(direction: int, frame_counter: int, *, walking_phase: bool = False) -> tuple[tuple[int, int, int, int], ...]:
     """Return the raw 0x58 two-high bank-12 cel refs.
 
     ASM-backed atlas mapping: left-facing top 16..19 / bottom 20..23;
-    right-facing top 28..31 / bottom 32..35.  These are independent sprite
-    ranges, not a mirrored copy and not the old 31..38 approximation.
+    right-facing top 28..31 / bottom 32..35.  While walking, the top tile is
+    held closed (16 or 28); only the bottom half cycles.  During the stopped
+    firing phase the top extends through 17..19 / 29..31 and becomes
+    vulnerable only on the final cel.
     """
     frame = state1f_frame_index(frame_counter, direction=direction)
     if direction > 0:
-        return ((0, -1, 12, 28 + frame), (0, 0, 12, 32 + frame))
-    return ((0, -1, 12, 16 + frame), (0, 0, 12, 20 + frame))
+        top = 28 if walking_phase else 28 + frame
+        return ((0, -1, 12, top), (0, 0, 12, 32 + frame))
+    top = 16 if walking_phase else 16 + frame
+    return ((0, -1, 12, top), (0, 0, 12, 20 + frame))
 
 
 def state2a_dog_counter_next(counter: int, *, direction: int) -> int:
@@ -338,7 +356,9 @@ def multi_tile_actor_refs(code: int, direction: int, frame_counter: int) -> tupl
     if code == 0x56:
         return ((0, -1, 12, 0 + frame), (0, 0, 12, 4 + frame))
     if code == 0x58:
-        return state1f_actor_refs(direction, frame_counter)
+        # Unknown callers should prefer the safe/closed walking top.  Runtime
+        # passes the live DS:34DE phase when it renders the actual actor slot.
+        return state1f_actor_refs(direction, frame_counter, walking_phase=True)
     if code == 0x63:
         # Ceiling laser crawler is a one-tile actor using bank12 36..43.
         # It is handled by walker_tile(); do not draw it as a separate
@@ -348,9 +368,22 @@ def multi_tile_actor_refs(code: int, direction: int, frame_counter: int) -> tupl
 
 
 def state2b_tile(frame_counter: int) -> tuple[int, int]:
-    # raw 0x40 / object 0x0131 is in the decoded bank-9 animated family.
+    # raw 0x40 / object 0x0131 animates only the upper cel through bank9 4..7.
+    # DS:34D6 still runs 1..0x13, so compress each five-count range to one
+    # visible cel instead of cycling through the whole decoded bank row.
     frame = max(1, min(0x13, frame_counter))
-    return (9, ((frame - 1) % 19) + 1)
+    return (9, 4 + ((frame - 1) // 5) % 4)
+
+
+def state2b_actor_refs(frame_counter: int) -> tuple[tuple[int, int, int, int], ...]:
+    """Return the visible composite for raw 0x40/state 0x2B.
+
+    The EXE treats object 0x0131 as a two-cell decoration/trap with a static
+    lower body and the animated top above the map origin.  The animated part is
+    the bank9 4..7 family; tile 8 is the stable lower base seen under it.
+    """
+    bank, top_tile = state2b_tile(frame_counter)
+    return ((0, -1, bank, top_tile), (0, 0, bank, 8))
 
 def state2c_tile(code: int, frame_counter: int) -> tuple[int, int]:
     # State 0x2C advances DS:34D6, but the decoded sprite family is not a
@@ -372,7 +405,10 @@ def state17_landmine_tile(object_id: int, frame_counter: int) -> tuple[int, int]
         # SAM1:0x3728..0x378E: floor(DS:34D6 / 3) is added to the object-family
         # base.  Keep the current decoded bank-5 approximation but match the
         # original timing instead of using a made-up four-tick cadence.
-        return (5, (42, 43, 44, 44)[min(3, frame // 3)])
+        # The object-family ids 0x0271+ map to the same visible explosion
+        # cels as projectile impacts in the decoded atlas.  Using bank5 44 here
+        # produced a fully black square on several tilesets.
+        return (5, (24, 25, 26, 27)[min(3, (frame - 1) // 3)])
     # Idle object 0x0270 is the raw 0x4D mine.  The draw path at
     # SAM1:0x36C2..0x3725 divides DS:34D6 by five, and the state-0x17 update
     # wraps non-triggered mines after DS:34D6 > 9.  That produces a two-cel

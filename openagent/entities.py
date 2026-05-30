@@ -24,6 +24,11 @@ from .exe_actor_mechanics import (
     SHARK_SWIMMER_STEP_PX,
     SHARK_SWIMMER_OBJECT_ID,
     SHARK_SWIMMER_STATE,
+    FIRE_WALKER_CODE,
+    FIRE_WALKER_STEP_PX,
+    FIRE_WALKER_STATE,
+    SATELLITE_OBJECT_ID,
+    SATELLITE_HP,
     STATE27_SHOOTER_CODE,
     STATE1E_SHOOTER_CODE,
     STATE1F_SHOOTER_CODE,
@@ -76,6 +81,7 @@ WALKER_STEP_BY_CODE: dict[int, int] = {
     0x6E: SPECIAL_ACTOR_MODELS[0x6E].step_px,
     0x7F: SPECIAL_ACTOR_MODELS[0x7F].step_px,
     SHARK_SWIMMER_CODE: SHARK_SWIMMER_STEP_PX,
+    FIRE_WALKER_CODE: FIRE_WALKER_STEP_PX,
     0xAE: SPECIAL_ACTOR_MODELS[0xAE].step_px,
     0x24: SPECIAL_ACTOR_MODELS[0x24].step_px,
     0x56: SPECIAL_ACTOR_MODELS[0x56].step_px,
@@ -238,7 +244,9 @@ class Satellite:
     timer_ticks: int = 0
     period_ticks: int = 3
     behavior_state: int = 0x20
-    object_id: int = 0x0097
+    object_id: int = SATELLITE_OBJECT_ID
+    hp: int = SATELLITE_HP
+    hit_flash_ticks: int = 0
 
 
 @dataclass
@@ -461,7 +469,11 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     )
                 )
                 continue
-            direction = deterministic_direction(cell.code, cell.x, cell.y) if actor_model and actor_model.random_initial_direction else (-1 if cell.code in {0x76} else 1)
+            direction = (
+                deterministic_direction(cell.code, cell.x, cell.y)
+                if (actor_model and actor_model.random_initial_direction) or cell.code == FIRE_WALKER_CODE
+                else (-1 if cell.code in {0x76} else 1)
+            )
             shoot_interval = (
                 deterministic_range(cell.code, cell.x, cell.y, actor_model.timer_min or 30, actor_model.timer_max or 49, salt=4)
                 if actor_model and cell.code in {0x63, 0x6E, STATE27_SHOOTER_CODE, STATE24_UP_LASER_CODE, STATE1E_SHOOTER_CODE, STATE1F_SHOOTER_CODE}
@@ -511,10 +523,11 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                         else "state23_contact_bomb" if cell.code == STATE23_CONTACT_BOMB_CODE
                         else "state24_up_laser" if cell.code == STATE24_UP_LASER_CODE
                         else "lightning_flyer" if cell.code == 0x6E
+                        else "fire_walker" if cell.code == FIRE_WALKER_CODE
                         else "state06_contact_floater" if cell.code == STATE06_CONTACT_FLOATER_CODE
                         else "walker"
                     ),
-                    behavior_state=actor_model.behavior_state if actor_model else 0,
+                    behavior_state=(FIRE_WALKER_STATE if cell.code == FIRE_WALKER_CODE else (actor_model.behavior_state if actor_model else 0)),
                     object_id=actor_model.object_id if actor_model else 0,
                     hp=(
                         ACTOR_HP_BY_OBJECT_ID.get(actor_model.object_id, actor_model.aux_dc or 1)

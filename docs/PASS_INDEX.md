@@ -37,3 +37,7 @@ The pass files are still kept verbatim under `docs/passes/`.
 - Pass 88: Re-audited raw `0x77` teleporter alignment/rearm and live bank10 idle/warp animation.
 
 - Pass 89: Re-audited raw `0x58` / object `0x0331` / state `0x1F`; fixed bank12 composite top/bottom frame ranges and added its walk/stop/open `DA/DC/DE` timer cycle.
+
+- Pass 90: Rechecked raw `0x77` teleporter cooldown/nudge and normal jump-start headroom gate; fixed destination re-exit ping-pong and blocked jumps into a solid tile above.
+
+- Pass 91: Rechecked damage-gated bank-12 enemies and several missed actor visuals: 0x58 closed-top/vulnerable-open hit policy, 0x6D fire walker, 0x23 satellite score target, 0x40 upper-only animation, and 0x4D triggered-mine explosion draw.

@@ -34,6 +34,7 @@ from .animation import (
     bank14_guard_tile,
     satellite_tile,
     multi_tile_actor_refs,
+    state2b_actor_refs,
     state2b_tile,
     state2c_tile,
     state17_landmine_tile,
@@ -622,10 +623,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         return abs(center_x - pad_cx) <= 8 and abs(center_y - pad_cy) <= 12
 
     def player_overlaps_teleporter_pad(self, cell) -> bool:
-        # The dispatcher is reached only after the player interaction probe has
-        # hit the runtime cA=0x00B7 pad cell.  Use the EXE collision footprint
-        # rather than the full 16x16 art so the release gate stays armed until
-        # the player actually leaves the destination pad.
+        # Approximate the cA=0x00B7 pad contact used by the interaction
+        # dispatcher.  This is intentionally still a real pad overlap test,
+        # used for arming the teleporter before the ASM-style +/-2 X alignment
+        # gate below.
         p = self.player
         left = p.x + 3
         right = p.x + 12
@@ -636,6 +637,21 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         pad_top = cell.y * TILE
         pad_bottom = pad_top + TILE - 1
         return not (right < pad_left or left > pad_right or bottom < pad_top or top > pad_bottom)
+
+    def player_still_in_teleporter_x_footprint(self, cell) -> bool:
+        # There is no input-direction test in the teleporter branch.  The EXE
+        # avoids immediate ping-pong mostly through DS:69E0/69E2 and the +/-3
+        # destination X nudge.  The reconstructed broad interaction pass can
+        # otherwise clear the release gate too early when Y is slightly outside
+        # the pad cell, then the first opposite-direction step can cross back
+        # through the +/-2 X alignment band.  Keep the destination armed until
+        # the player's actual 0xB7D9 collision footprint has left the pad column.
+        p = self.player
+        left = p.x + 3
+        right = p.x + 12
+        pad_left = cell.x * TILE
+        pad_right = pad_left + TILE - 1
+        return not (right < pad_left or left > pad_right)
 
     def player_aligned_on_teleporter(self, cell) -> bool:
         # SAM1:0xD493..0xD4CB masks the pad X to a 16px boundary, then compares
@@ -649,14 +665,15 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
     def update_teleport_release_gate(self) -> None:
         # While DS:69E0 is active the EXE refuses to arm another teleport.  On
         # arrival the stored destination X is deliberately nudged by +/-3 px, so
-        # the next dispatcher pass is not aligned, but keep an explicit gate
-        # until the player has physically left the destination pad.  This makes
-        # normal mission teleporters escapable instead of ping-ponging A<->B.
+        # the next dispatcher pass is not aligned.  Keep an explicit
+        # reconstruction gate until the player's B7D9 X footprint leaves the
+        # destination pad column; otherwise a Y-misaligned broad overlap can
+        # clear the gate before the player has actually walked out.
         if self.teleport_release_cell is None:
             return
         for cell in self.teleporter_cells():
             if (cell.x, cell.y, cell.layer) == self.teleport_release_cell:
-                if self.player_overlaps_teleporter_pad(cell):
+                if self.player_still_in_teleporter_x_footprint(cell):
                     return
                 break
         self.teleport_release_cell = None
@@ -816,7 +833,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         if p.jump_anim_timer <= 0:
             p.fall_ticks, fall_step = advance_fall_tick(p.fall_ticks)
             self.move_player_fall_tick(fall_step)
-            if jump and p.grounded:
+            if jump and p.grounded and self.player_jump_headroom_clear():
                 p.grounded = False
                 p.fall_ticks = 0
                 p.jump_anim_timer = 1
@@ -856,6 +873,21 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # gate.  In this runtime level 0 is the overworld and mission indices
         # are the same 1-based values used by the EXE's level-state variable.
         return self.level_index > 1
+
+    def player_jump_headroom_clear(self) -> bool:
+        # SAM1:0xBC5E..0xBCB8 gates jump start before writing DS:6EC1.  It
+        # probes runtime byte +0x1CC at Y-3 using the same player X samples
+        # as B7D9 (x+3 and x+12).  If either probe is body-solid the space key
+        # is ignored for this tick, so the player cannot start a jump into a
+        # solid tile directly overhead.
+        if not self.collision_enabled:
+            return True
+        p = self.player
+        probe_y = int(p.y - 3) // TILE
+        for sample_x in (int(p.x + 3), int(p.x + 12)):
+            if self.cell_blocks_body(sample_x // TILE, probe_y):
+                return False
+        return True
 
     def update_speed_bonus_tick(self) -> None:
         p = self.player
@@ -901,6 +933,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             if beam.timer_ticks >= BEAM_CYCLE_TICKS:
                 beam.timer_ticks = 0
         for satellite in self.entities.satellites:
+            if satellite.hit_flash_ticks > 0:
+                satellite.hit_flash_ticks -= 1
             satellite.timer_ticks += 1
             if satellite.timer_ticks >= satellite.period_ticks:
                 satellite.timer_ticks = 0
@@ -2454,6 +2488,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         for satellite in self.entities.satellites:
             tile = self.episode.tiles16.get(*satellite_tile(satellite.frame_index))
             if tile:
+                tile = self.apply_enemy_hit_flash(tile, satellite)
                 rx, ry = self.entity_render_position(satellite)
                 frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
         for enemy in self.entities.enemies:
@@ -2464,7 +2499,11 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                     walking_phase=(enemy.kind == "state27_shooter" and enemy.phase_ticks > 0),
                 )
             elif enemy.code == 0x58:
-                multi_refs = state1f_actor_refs(enemy.direction, enemy.frame_counter)
+                multi_refs = state1f_actor_refs(
+                    enemy.direction,
+                    enemy.frame_counter,
+                    walking_phase=(enemy.kind == "state1f_shooter" and enemy.phase_ticks > 0),
+                )
             else:
                 multi_refs = multi_tile_actor_refs(enemy.code, enemy.direction, enemy.frame_counter)
             if multi_refs is not None:
@@ -2482,12 +2521,13 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             else:
                 animated = walker_tile(enemy.code, direction=enemy.direction, anim_time=enemy.anim_time, frame_counter=enemy.frame_counter)
             if enemy.kind == "state2b_anim":
-                tile = self.episode.tiles16.get(*state2b_tile(enemy.frame_counter))
-                if tile:
-                    tile = self.apply_enemy_hit_flash(tile, enemy)
-                    rx, ry = self.entity_render_position(enemy)
-                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
-                    continue
+                rx, ry = self.entity_render_position(enemy)
+                for relx, rely, bank, tile_no in state2b_actor_refs(enemy.frame_counter):
+                    tile = self.episode.tiles16.get(bank, tile_no)
+                    if tile:
+                        tile = self.apply_enemy_hit_flash(tile, enemy)
+                        frame.alpha_composite(tile, (int(rx - cam_x + relx * TILE), int(ry - cam_y + rely * TILE)))
+                continue
             if enemy.kind == "state2c_anim":
                 tile = self.episode.tiles16.get(*state2c_tile(enemy.code, enemy.frame_counter))
                 if tile:

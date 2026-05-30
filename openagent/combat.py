@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .animation import actor_walk_counter_next, state1f_walk_counter_start
+from .animation import actor_walk_counter_next, state1f_is_vulnerable, state1f_walk_counter_start, state27_walk_counter_next
 from .entities import Enemy, Explosion, Projectile, ScorePopup
 from .exe_actor_mechanics import (
     BANK14_GUARD_BEHAVIOUR_BY_BASE_TILE,
@@ -26,6 +26,7 @@ from .exe_actor_mechanics import (
     STATE27_PROJECTILE_RIGHT_TILE,
     STATE29_MONEY_BAG_FALLING_OBJECT_ID,
     STATE29_MONEY_BAG_SCORE,
+    SATELLITE_SCORE,
     STATIONARY_SHOOTER_PROJECTILE,
     STATIONARY_SHOOTER_SPAWN_X_OFFSET,
     deterministic_range,
@@ -351,7 +352,7 @@ class CombatMixin:
         # bullets impact and explode, but the actor is not removed or damaged.
         # Other unimplemented actor states may be harmful or non-shootable, but
         # they should not automatically become wall blocks.
-        return enemy.kind == "stationary_shooter"
+        return enemy.kind in {"stationary_shooter", "fire_walker"}
 
     def update_projectiles_tick(self) -> None:
         kept: list[Projectile] = []
@@ -410,6 +411,25 @@ class CombatMixin:
                 continue
             if blocked_by_actor is not None:
                 self.begin_projectile_impact(shot)
+                kept.append(shot)
+                continue
+            satellite_hit = None
+            for satellite in self.entities.satellites:
+                if self.segment_hits_rect(
+                    old_x,
+                    old_y,
+                    shot.x,
+                    shot.y,
+                    satellite.x,
+                    satellite.y,
+                    satellite.x + TILE - 1,
+                    satellite.y + TILE - 1,
+                ):
+                    satellite_hit = satellite
+                    break
+            if satellite_hit is not None:
+                self.hit_satellite_with_projectile(satellite_hit)
+                self.begin_projectile_impact(shot, visible=False, ticks=4)
                 kept.append(shot)
                 continue
             kept.append(shot)
@@ -544,17 +564,34 @@ class CombatMixin:
         if popup_tile is not None:
             self.entities.score_popups.append(ScorePopup(float(x), float(y - 8), value, popup_tile))
 
+    def hit_satellite_with_projectile(self, satellite) -> None:
+        # Raw 0x23/object 0x0097 is a score target, not a contact hazard.
+        # Keep the projectile impact invisible, flash the satellite while it
+        # still has durability, then remove it and award the normal target score.
+        if satellite not in self.entities.satellites:
+            return
+        if satellite.hp > 1:
+            satellite.hp -= 1
+            satellite.hit_flash_ticks = 3
+            self.play_sound(SOUND_HURT)
+            return
+        self.entities.satellites.remove(satellite)
+        self.score += SATELLITE_SCORE
+        self.spawn_score_popup(satellite.x, satellite.y, SATELLITE_SCORE)
+        self.spawn_projectile_explosion(satellite.x + TILE / 2, satellite.y + TILE / 2)
+        self.play_sound(SOUND_ENEMY_DEATH)
+
     def hit_enemy_with_projectile(self, enemy, shot: Projectile | None = None) -> None:
         if enemy.kind == "state27_shooter":
             # Raw 0x24 / object 0x0065 has an object-specific hit branch and
             # the state-0x27 update only enters the death/score path while
             # DS:34DE == 0.  During the walking/closed-helmet phase the EXE
-            # plays sound 0x08 but does not damage/remove the actor.
+            # only turns the actor toward the hit; it does not blink/flash and
+            # does not decrement HP.
             if enemy.phase_ticks > 0:
-                # Closed helmet ping: the object-specific hit branch still
-                # gives the actor the same short white feedback, but does not
-                # decrement HP or kill it.
-                enemy.hit_flash_ticks = 3
+                if shot is not None:
+                    enemy.direction = -1 if shot.x > enemy.x else 1
+                    enemy.frame_counter = state27_walk_counter_next(0, direction=enemy.direction, walking_phase=True)
                 enemy.alert_ticks = 8
                 self.play_sound(SOUND_HURT)
                 return
@@ -566,6 +603,19 @@ class CombatMixin:
             self.spawn_projectile_explosion(enemy.x + TILE / 2, enemy.y + TILE / 2)
             self.play_sound(SOUND_ENEMY_DEATH)
             return
+        if enemy.kind == "state1f_shooter":
+            vulnerable = state1f_is_vulnerable(
+                enemy.direction,
+                enemy.frame_counter,
+                walking_phase=enemy.phase_ticks > 0,
+            )
+            if not vulnerable:
+                if shot is not None:
+                    enemy.direction = -1 if shot.x > enemy.x else 1
+                    enemy.frame_counter = state1f_walk_counter_start(enemy.direction)
+                enemy.alert_ticks = 8
+                self.play_sound(SOUND_HURT)
+                return
         if enemy.is_rip:
             self.entities.enemies.remove(enemy)
             self.score += BANK14_RIP_SHOT_SCORE
