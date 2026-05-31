@@ -13,7 +13,7 @@ Use these when the question is not "what does this mechanic do?" but "does the P
 - Annotated ASM working copy: `dissassembly/annotated/SAM1_tick_accuracy_excerpts.asm`
 - Audit: `python tools/audit_tick_accuracy.py`
 
-Current phase rows cover mission fixed tick order, hard-death arc, normal mission motion, raw `0xA7` barrel interaction, overworld level-0 tick, animated decor/contact policy, and projectile/enemy contact policy. Pass 118 tightens the raw-`0xA7` player/barrel contact rectangle from full-sprite overlap to the ASM `x+3..x+12`, `y..y+15` interval test. Pass 119 adds raw `0x51/0x52` stationary launcher cadence/origin; pass 120 corrects their movement/body helper policy back to non-solid/non-contact and documents the Python render-anchor compensation for projectile Y; pass 121 closes the remaining broad `check_enemy_touch()` fallback path.
+Current phase rows cover mission fixed tick order, hard-death arc, normal mission motion, raw `0xA7` barrel interaction, overworld level-0 tick, animated decor/contact policy, and projectile/enemy contact policy. Pass 118 tightens the raw-`0xA7` player/barrel contact rectangle from full-sprite overlap to the ASM `x+3..x+12`, `y..y+15` interval test. Pass 119 adds raw `0x51/0x52` stationary launcher cadence/origin; pass 120 corrects their movement/body helper policy back to non-solid/non-contact and documents the Python render-anchor compensation for projectile Y; pass 121 closes the remaining broad `check_enemy_touch()` fallback path. Pass 123 corrects pass 122: `SAM1:0x848A` is the destructive `0x00AA/state 0x1389` score branch and must not be used for wall-blocked pushes. Pass 124 tried crossed-through + front-wall probes; pass 125 corrects that timing to use the same `x+3..x+12` leading-edge crossing from `SAM1:0x83C4..0x842F` and a just-outside-shrunken-interval (~10/11px) restoration instead of full-tile clearance; pass 126 fixes the live Python polling path so an active wall-release barrel keeps using the per-pixel path until it restores to ordinary pushable `0xA7/state 0x1388`; pass 127 moves ordinary barrel push/fall to a named 4px actor-step reconstruction instead of the player `DS:34AF` table; pass 128 locks pushed-off-edge fall against further side pushes until landing; pass 129 re-audits stationary projectile pass-through for `0x51/0x52` and `0x3C/0x3D` so player hits hurt but do not consume the shot/rocket; pass 130 reorders the Python normal-motion tick so the `BC0E` vertical fall/jump phase is visible before the same-tick horizontal `B7D9` destination probe, and pass 131 fixes the DS:34AF table off-by-one (`0x34B0=0` is counter 1), restoring modulo-16 doorway alignment during the jump/fall arc; exact wall-push and pushed-off-edge stores plus the outer player-control wrapper trace are still open.
 
 ## High confidence / mostly verified
 
@@ -57,11 +57,11 @@ Current phase rows cover mission fixed tick order, hard-death arc, normal missio
 - Current gaps: exact `0x520:0x011A` restart helper semantics for score/ammo/inventory persistence and game-over/menu flow.
 
 ### Normal mission player movement
-- Fields: `DS:681E`, `DS:34AF`, `DS:34EA`, `DS:6EC1`
+- Fields: `DS:681E`, `DS:34AF`, `DS:34EA`, `DS:6EC1`, `DS:34EE`, `DS:34F0`
 - Status: `asm_partial`
-- Evidence: pass 9, pass 12, pass 80-84
-- Confirmed: normal horizontal ramp, normal jump/fall shared table, apex transition tick, atomic falling, exact static `+0x1CC/+0x1CD` fall probes, and dynamic-platform crossing landing.
-- Current gaps: original dynamic-platform actor overlap branch, raw-`0xA7` `0x1389` state/timer side effects and blocked-push release, actor-backed solid fall overlap, ladders/direct vertical movement, difficulty modifiers.
+- Evidence: pass 9, pass 12, pass 80-84, pass 130, pass 131
+- Confirmed: normal horizontal ramp, normal jump/fall shared table, apex transition tick, atomic falling, exact static `+0x1CC/+0x1CD` fall probes, dynamic-platform crossing landing, and the shared `B7D9` 10x16 player-origin rectangle (`x+3/x+12`, `y/y+15`). Pass 130 applies the `BC0E` vertical fall/jump phase before the same-tick horizontal `B7D9` destination probe. Pass 131 corrects table indexing from `SAM1:0x28ED6..0x28F35`: `DS:34EA=1` reads initialized byte `0x34B0=0`, then `DS:34EA=2` reads 8, which restores the original one-tile-opening alignment frames.
+- Current gaps: exact outer player-control wrapper ordering around `BC0E` and horizontal control is still partial until `0x520:0x68F5 / 0x520:0x6A0E` are traced, original dynamic-platform actor overlap branch, raw-`0xA7` exact pushed-off-edge store/timing beyond the pass-127 actor-step and pass-128 falling-lock reconstruction, exact wall-blocked free-side snap caller/store and DOSBox pixel timing beyond the pass-125/pass-126 shrunken-edge reconstruction and polling fix, helper-`0x547C` projectile-hit branch, actor-backed solid fall overlap, ladders/direct vertical movement, difficulty modifiers.
 
 ### Enemy `0x24`
 - Object/state: `0x0065/state 0x27`
@@ -79,18 +79,18 @@ Current phase rows cover mission fixed tick order, hard-death arc, normal missio
 
 ### Projectiles
 - Status: `asm_partial`
-- Evidence: pass 64, pass 95, pass 96, pass 97
-- Confirmed: helper `0x5784` maps player/ordinary shots to state `0x07`; object `0x72` normally maps to state `0x25`, while ceiling-laser input object `0x00C7` is rewritten to object `0x72/state 0x89`; dispatcher order shows state `0x89` calls generic `0x53C4`, while state `0x25` owns the direct hard-death rectangle. Both narrow laser policies use the player's origin gameplay rectangle (`DS:34EE..+9`, `DS:34F0..+15`), not the full decoded sprite.
-- Current gaps: complete projectile object/state table, exact object-`0x72` foreground redraw policy, and exact impact-spark policy for non-laser projectiles.
+- Evidence: pass 64, pass 95, pass 96, pass 97, pass 129
+- Confirmed: helper `0x5784` maps player/ordinary shots and stationary shot object `0x01D6` to state `0x07`; object `0x72` normally maps to state `0x25`, while ceiling-laser input object `0x00C7` is rewritten to object `0x72/state 0x89`; stationary rocket objects `0x01E8/0x01EC` use the default projectile state `0x0E`. Dispatcher order shows state `0x89` calls generic `0x53C4`, while state `0x25` owns the direct hard-death rectangle. State `0x07` and state `0x0E` call `0x53C4` for player contact but do not consume the projectile on player hit; the separate `0x547C` impact branch owns projectile rewrite/removal. Narrow projectile policies use the player's origin gameplay rectangle (`DS:34EE..+9`, `DS:34F0..+15`) against a 10x16 hazard rectangle, not the full decoded sprite.
+- Current gaps: complete projectile object/state table, exact object-`0x72` foreground redraw policy, exact `0x547C` impact side effects, and exact impact-spark policy for non-laser projectiles.
 
-### Stationary launchers `0x51/0x52`
-- Raw/object/state: raw `0x52` -> object `0x01D0/state 0x0A` right-facing; raw `0x51` -> object `0x01D1/state 0x0B` left-facing.
-- Status: `asm_partial`, with firing cadence/origin now traced.
-- Evidence: pass 26, pass 119, pass 120, pass 121.
-- Confirmed: `SAM1:0x6B88/0x6C73` increments `DS:34DA` before the player row/front gate; the timer resets only after a successful helper `0x5784` spawn. The row gate compares `(player_y+8)&0xfff0` to `actor_y&0xfff0`. Raw `0x52` fires object `0x01D6` from `actor_x+8, actor_y`, direction `+1`, speed `4`; raw `0x51` fires from `actor_x-8, actor_y`, direction `-1`, speed `4`.
-- Confirmed negative policy: decoded shot-damage evidence from pass 29 does not include objects `0x01D0/0x01D1`; pass 120 removes the unsupported movement/body helper reconstruction that made them solid/contact-harmful; pass 121 also excludes them from the broad `check_enemy_touch()` fallback. They are hostile through emitted projectile `0x01D6`, not through body contact.
-- Python note: helper `0x5784` receives `actor_y`, while the runtime stores `Projectile.y = actor_y + 7` because ordinary horizontal projectile sprites render at `y-7`; the visible top therefore lines up with the ASM helper Y.
-- Current gaps: exact body-contact dispatcher absence for the related raw `0x3C/0x3D` launcher pair is still not separately audited.
+### Stationary launchers `0x51/0x52` and rockets `0x3C/0x3D`
+- Raw/object/state: raw `0x52` -> object `0x01D0/state 0x0A` right-facing; raw `0x51` -> object `0x01D1/state 0x0B` left-facing; raw `0x3C` -> object `0x01E7/state 0x0C` right-facing rocket launcher; raw `0x3D` -> object `0x01EB/state 0x0D` left-facing rocket launcher.
+- Status: `asm_partial`, with firing cadence/origin and projectile pass-through now traced for the stationary launcher family.
+- Evidence: pass 26, pass 119, pass 120, pass 121, pass 129.
+- Confirmed: `SAM1:0x6B88/0x6C73` increments `DS:34DA` before the player row/front gate; the timer resets only after a successful helper `0x5784` spawn. The row gate compares `(player_y+8)&0xfff0` to `actor_y&0xfff0`. Raw `0x52` fires object `0x01D6` from `actor_x+8, actor_y`, direction `+1`, speed `4`; raw `0x51` fires from `actor_x-8, actor_y`, direction `-1`, speed `4`; raw `0x3C` fires object `0x01E8` from `actor_x+16, actor_y`, direction `+1`, speed `4`; raw `0x3D` fires object `0x01EC` from `actor_x-16, actor_y`, direction `-1`, speed `4`.
+- Confirmed negative policy: decoded shot-damage evidence from pass 29 does not include launcher bodies `0x01D0/0x01D1`; pass 120 removes the unsupported movement/body helper reconstruction that made them solid/contact-harmful; pass 121 also excludes stationary launchers from the broad `check_enemy_touch()` fallback. They are hostile through emitted projectiles, not through body contact.
+- Projectile policy: helper `0x5784` receives `actor_y`; Python stores `Projectile.y = actor_y + 7` only because ordinary horizontal projectile sprites render at `y-7`, and uses `hit_y_offset=-7` so the `0x53C4` 10x16 damage rectangle remains at the ASM helper Y. Player contact hurts but does not consume `0x01D6`, `0x01E8`, or `0x01EC`; the `0x547C` branch owns impact/consumption.
+- Current gaps: exact body-contact dispatcher absence for `0x3C/0x3D` launcher bodies should still be verified separately from projectile pass-through; exact `0x547C` rocket impact effects and sprite-top DOSBox alignment remain open.
 
 
 ## Low confidence / should audit next

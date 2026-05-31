@@ -34,6 +34,16 @@ Start here for day-to-day work:
 | 119 | Re-audited raw `0x51/0x52` stationary launchers: fixed elapsed firing cadence and helper projectile origin, but pass 120 later corrects the body-policy conclusion. |
 | 120 | Corrected raw `0x51/0x52` to non-solid/non-contact bodies, compensated projectile render Y, and removed the unsupported raw-`0xA7` blocked-release horizontal side-pop. |
 | 121 | Fixed the remaining global `check_enemy_touch()` fallback so stationary launchers cannot hurt by touch, and documented raw-`0xA7` release/fall as still partial instead of overclaiming it. |
+| 122 | Superseded by pass 123: incorrectly mapped raw `0xA7` wall-contact release to the destructive object `0x00AA/state 0x1389` score branch. |
+| 123 | Corrected raw `0xA7` wall-blocked push: `0x848A` is destructive/score, so wall release now keeps raw `0xA7` body-pass-through/top-solid and uses a guarded free-side snap reconstruction. |
+| 124 | Tightened raw `0xA7` wall-release handoff: pass-through barrel now waits until the player has crossed it and the leading body probe is at the wall before restoring on the free side. |
+| 125 | Corrected raw `0xA7` wall-release timing: handoff now uses the ASM shrunken `x+3..x+12` leading-edge crossing and restores by ~10px clearance instead of waiting for a live wall probe/full-tile snap. |
+| 126 | Fixed raw `0xA7` wall-release polling in the live horizontal path: active release barrels force per-pixel movement polling until free-side restoration completes, then return to normal pushable `0xA7/state 0x1388`. |
+| 127 | Rechecked raw `0xA7` ordinary push/fall: barrel push and unsupported fall now use a named 4px actor-step reconstruction instead of the player `DS:34AF` gravity table / one-pixel substep. |
+| 128 | Locked raw `0xA7` pushed-off-edge fall against further side pushes: once support is lost, the barrel keeps its fall-column X until landing and then becomes pushable again. |
+| 129 | Re-audited stationary projectile policy for `0x51/0x52` and `0x3C/0x3D`: shots/rockets hurt the player through `0x53C4` but keep flying until the separate impact branch consumes them. |
+| 130 | Rechecked normal player one-tile opening movement: BC0E vertical fall/jump now happens before the same-tick horizontal B7D9 destination probe so jump/landing alignment is visible to horizontal acceptance. |
+| 131 | Corrected the DS:34AF vertical table indexing: counter 1 reads initialized byte 0x34B0=0, restoring the zero first jump tick and the later modulo-16 doorway alignment frame. |
 
 ## Recent ASM / gameplay passes
 
@@ -63,6 +73,16 @@ Start here for day-to-day work:
 | 119 | Re-audited raw `0x51/0x52` stationary launchers: `DS:34DA` is elapsed time, not a line-of-sight countdown; fixed immediate charged firing and helper `actor_y` projectile origin. |
 | 120 | Corrected pass 119 body policy: raw `0x51/0x52` are not solid/contact hazards; Python compensates projectile render Y while preserving ASM helper `actor_y`.  Also removed the reconstructed barrel release side-nudge. |
 | 121 | Closed the second `0x51/0x52` contact-damage path in `check_enemy_touch()`: the generic body fallback now excludes stationary launchers, while barrel pushed-off-edge / release state remains explicitly tracked as an unresolved `0x1389` accuracy gap. |
+| 122 | Superseded by pass 123: promoted the wrong destructive `0x00AA/state 0x1389` branch into wall-release gameplay. |
+| 123 | Corrected raw `0xA7` wall-blocked push: `0x848A` is destructive/score, so wall release now keeps raw `0xA7` body-pass-through/top-solid and uses a guarded free-side snap reconstruction. |
+| 124 | Tightened raw `0xA7` wall-release handoff: pass-through barrel now waits until the player has crossed it and the leading body probe is at the wall before restoring on the free side. |
+| 125 | Corrected raw `0xA7` wall-release timing: handoff now uses the ASM shrunken `x+3..x+12` leading-edge crossing and restores by ~10px clearance instead of waiting for a live wall probe/full-tile snap. |
+| 126 | Fixed raw `0xA7` wall-release polling in the live horizontal path: active release barrels force per-pixel movement polling until free-side restoration completes, then return to normal pushable `0xA7/state 0x1388`. |
+| 127 | Rechecked raw `0xA7` ordinary push/fall: barrel push and unsupported fall now use a named 4px actor-step reconstruction instead of the player `DS:34AF` gravity table / one-pixel substep. |
+| 128 | Locked raw `0xA7` pushed-off-edge fall against further side pushes: once support is lost, the barrel keeps its fall-column X until landing and then becomes pushable again. |
+| 129 | Re-audited stationary projectile policy for `0x51/0x52` and `0x3C/0x3D`: shots/rockets hurt the player through `0x53C4` but keep flying until the separate impact branch consumes them. |
+| 130 | Rechecked normal player one-tile opening movement: BC0E vertical fall/jump now happens before the same-tick horizontal B7D9 destination probe so jump/landing alignment is visible to horizontal acceptance. |
+| 131 | Corrected the DS:34AF vertical table indexing: counter 1 reads initialized byte 0x34B0=0, restoring the zero first jump tick and the later modulo-16 doorway alignment frame. |
 
 ## Full archive
 
@@ -73,3 +93,4 @@ Before packaging a handoff build, run:
 ```bash
 python tools/check_handoff.py
 ```
+

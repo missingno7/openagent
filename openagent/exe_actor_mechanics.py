@@ -314,6 +314,27 @@ STATIONARY_SHOOTER_SPAWN_X_OFFSET: dict[int, int] = {
     0x3D: -16,
 }
 
+# Helper 0x5784 projectile-state mapping for the stationary launcher group.
+# Object 0x01D6 (raw 0x51/0x52) enters state 0x07.  Objects 0x01E8/0x01EC
+# (raw 0x3C/0x3D rocket launchers) fall through to the default state 0x0E.
+# Both active states call helper 0x53C4 for player contact, which hurts the
+# player but does not rewrite/consume the projectile actor; wall/actor impact is
+# handled by the separate 0x547C branch.
+STATIONARY_SHOOTER_PROJECTILE_OBJECT_BY_CODE: dict[int, int] = {
+    0x52: 0x01D6,
+    0x51: 0x01D6,
+    0x3C: 0x01E8,
+    0x3D: 0x01EC,
+}
+STATIONARY_SHOOTER_PROJECTILE_STATE_BY_OBJECT: dict[int, int] = {
+    0x01D6: 0x07,
+    0x01E8: 0x0E,
+    0x01EC: 0x0E,
+}
+STATIONARY_SHOOTER_PROJECTILE_HITBOX_W = 10
+STATIONARY_SHOOTER_PROJECTILE_HITBOX_H = 16
+STATIONARY_SHOOTER_PROJECTILE_RENDER_Y_COMPENSATION = 7
+
 # Spike trap actors extracted from the same special-low actor table as the
 # bank-14 guards.  Raw 0x3F is the floor spike trap and raw 0x41 is the ceiling
 # spike trap.  The EXE does not animate them as a background tile.  It creates

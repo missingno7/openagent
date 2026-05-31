@@ -511,21 +511,19 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, MovementCollisio
             p.fire_pose_active = False
         p.fire_held = bool(fire)
 
-        if moving:
-            blocked = self.move_player_horizontal_tick(
-                move_dir * horizontal_step_for_hold_ticks(p.move_hold_ticks, p.speed_bonus_step)
-            )
-            if blocked and self.horizontal_block_resets_move_counter():
-                # SAM1:0xB898 clears DS:681E only when DS:681C > 1.  The
-                # reconstructed level model keeps level 0 as the overworld and
-                # uses the original 1-based mission level number after that.
-                p.move_hold_ticks = 0
+        horizontal_step = (
+            move_dir * horizontal_step_for_hold_ticks(p.move_hold_ticks, p.speed_bonus_step)
+            if moving
+            else 0
+        )
 
-        self.update_speed_bonus_tick()
-
-        # SAM1:0xBC0E first calls the B8B3 fall pass whenever DS:6EC1 is clear.
-        # This also runs while standing: landing does not clear DS:34EA, so a
-        # later ledge fall starts from the capped terminal table index.
+        # SAM1:0xBC0E owns the normal vertical side of player motion.  Run the
+        # fall/jump phase before accepting the horizontal destination probe so
+        # the same-tick Y snap or one-pixel jump ascent is visible to the later
+        # SAM1:0xB7D9 rectangle test.  This matters for one-tile openings: with
+        # the old horizontal-first ordering, the player could be rejected by
+        # the lower/upper corner one tick before BC0E aligned DS:34F0 to the
+        # passage.
         if p.jump_anim_timer <= 0:
             p.fall_ticks, fall_step = advance_fall_tick(p.fall_ticks)
             self.move_player_fall_tick(fall_step)
@@ -549,6 +547,17 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, MovementCollisio
                 if blocked:
                     p.jump_anim_timer = 0
                     p.fall_ticks = JUMP_ASCENT_END_COUNTER - 1
+
+        self.update_speed_bonus_tick()
+
+        if horizontal_step:
+            blocked = self.move_player_horizontal_tick(horizontal_step)
+            if blocked and self.horizontal_block_resets_move_counter():
+                # SAM1:0xB898 clears DS:681E only when DS:681C > 1.  The
+                # reconstructed level model keeps level 0 as the overworld and
+                # uses the original 1-based mission level number after that.
+                p.move_hold_ticks = 0
+
         self.update_player_anim_state(moving=moving)
 
         max_x = LEVEL_W * TILE - PLAYER_W

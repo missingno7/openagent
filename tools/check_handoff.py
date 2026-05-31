@@ -35,6 +35,7 @@ SMOKE_TESTS = (
     "tools/check_barrel_vertical_fall.py",
     "tools/check_barrel_player_interaction.py",
     "tools/check_stationary_shooter_accuracy.py",
+    "tools/check_player_motion_accuracy.py",
 )
 
 

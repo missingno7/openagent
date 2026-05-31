@@ -32,6 +32,9 @@ from .exe_actor_mechanics import (
     STATE29_MONEY_BAG_SCORE,
     SATELLITE_SCORE,
     STATIONARY_SHOOTER_PROJECTILE,
+    STATIONARY_SHOOTER_PROJECTILE_HITBOX_H,
+    STATIONARY_SHOOTER_PROJECTILE_HITBOX_W,
+    STATIONARY_SHOOTER_PROJECTILE_RENDER_Y_COMPENSATION,
     STATIONARY_SHOOTER_SPAWN_X_OFFSET,
     deterministic_range,
     object_id_is_shootable,
@@ -292,18 +295,37 @@ class CombatMixin:
             return
         if enemy.kind == "stationary_shooter":
             # EXE states 0x0A/0x0B use projectile object 0x01D6, while
-            # 0x0C/0x0D use 0x01E8/0x01EC.  Those resolve to the decoded
-            # bank-4 sprites below.  SAM1:0x6C0D..0x6C2D and
-            # 0x6CF8..0x6D18 pass actor_y directly to helper 0x5784; only
-            # the X origin is offset by +/-8 for raw 0x52/0x51.  In this
-            # Python runtime, ordinary horizontal projectile sprites render at
-            # ``projectile.y - 7``; store +7 here so the displayed sprite top
-            # lands on the EXE helper's actor_y instead of appearing 7px high.
+            # 0x0C/0x0D use rocket objects 0x01E8/0x01EC.  Helper 0x5784 maps
+            # 0x01D6 to active state 0x07 and 0x01E8/0x01EC to state 0x0E.
+            # Both active states call helper 0x53C4 for player contact, which
+            # hurts the player but does not rewrite/remove the projectile slot;
+            # the separate 0x547C impact branch owns projectile consumption.
             bank, tile_right, tile_left = STATIONARY_SHOOTER_PROJECTILE.get(enemy.code, (1, 38, 39))
             start_x = enemy.x + STATIONARY_SHOOTER_SPAWN_X_OFFSET.get(enemy.code, TILE - 2 if enemy.direction > 0 else -2)
-            start_y = enemy.y + 7
+            # SAM1:0x6C0D/0x6C39/0x6CF8/0x6D24 pass actor_y directly.
+            # The renderer draws ordinary horizontal projectile sprites at y-7,
+            # so keep the existing +7 visual anchor but move the 0x53C4 hurt
+            # rectangle back up by 7 pixels through hit_y_offset.
+            start_y = enemy.y + STATIONARY_SHOOTER_PROJECTILE_RENDER_Y_COMPENSATION
             self.entities.projectiles.append(
-                Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=bank, tile_right=tile_right, tile_left=tile_left, owner="enemy")
+                Projectile(
+                    start_x,
+                    start_y,
+                    enemy.direction,
+                    speed=4 * DOS_TICK_HZ,
+                    hostile=True,
+                    bank=bank,
+                    tile_right=tile_right,
+                    tile_left=tile_left,
+                    owner="enemy",
+                    narrow_hurt_on_hit=True,
+                    keep_on_player_hit=True,
+                    hit_w=STATIONARY_SHOOTER_PROJECTILE_HITBOX_W,
+                    hit_h=STATIONARY_SHOOTER_PROJECTILE_HITBOX_H,
+                    hit_y_offset=-STATIONARY_SHOOTER_PROJECTILE_RENDER_Y_COMPENSATION,
+                    impact_visible_on_solid=True,
+                    impact_ticks_on_solid=12,
+                )
             )
             return
         # Bank-14 shooter guards and the player share projectile helper 0x5784
@@ -427,8 +449,10 @@ class CombatMixin:
                 if self.hostile_projectile_hits_player(shot, old_x, old_y):
                     self.apply_hostile_projectile_hit(shot)
                     # Generic enemy shots are consumed by a player hit, but
-                    # object-0x72 laser states keep their actor slot/live beam
-                    # after the player-contact branch.
+                    # ASM projectile states that route player contact through
+                    # helper 0x53C4 (object-0x72 beams and stationary
+                    # shot/rocket states 0x07/0x0E) keep their actor slot after
+                    # the player-contact branch; impact/consumption is separate.
                     if shot.keep_on_player_hit:
                         kept.append(shot)
                     continue
@@ -501,7 +525,12 @@ class CombatMixin:
             # at the player's right/bottom visual edges.
             if shot.narrow_hurt_on_hit and self.hurt_flash > 0:
                 return False
-            return self.projectile_hits_player_origin_rect(shot.x, shot.y, shot.hit_w, shot.hit_h)
+            return self.projectile_hits_player_origin_rect(
+                shot.x + shot.hit_x_offset,
+                shot.y + shot.hit_y_offset,
+                shot.hit_w,
+                shot.hit_h,
+            )
         if shot.life_ticks > 0:
             return self.hurt_flash <= 0 and self.projectile_hits_player_rect(shot.x, shot.y, TILE, TILE)
         return self.hurt_flash <= 0 and self.projectile_hits_player(shot, old_x, old_y)

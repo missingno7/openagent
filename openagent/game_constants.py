@@ -39,15 +39,26 @@ PLAYER_SPEED_BONUS_TIMER_UNITS = 0xD8
 PLAYER_SPEED_BONUS_UNIT_TICKS = 0x14
 PLAYER_SPEED_BONUS_TOTAL_TICKS = PLAYER_SPEED_BONUS_TIMER_UNITS * PLAYER_SPEED_BONUS_UNIT_TICKS
 
-# Both jump ascent and falling use the same byte table at DS:34AF.
+# Raw actor-style movement helpers use explicit per-actor speed fields
+# (for example DS:34E6 in the 0x81C8 actor-candidate prelude). Several
+# decoded spawn/helper call sites feed 0x04 as the actor step. Raw 0xA7 barrel
+# push/fall must not borrow the player's DS:34AF vertical table.
+BARREL_ACTOR_STEP_PX = 4
+
+# Both player jump ascent and player falling use the same byte table at DS:34AF.
 JUMP_ASCENT_END_COUNTER = 0x0A
 FALL_COUNTER_MAX = 0x13
+# SAM1:0x28ED6..0x28F30 initializes bytes 0x34B0..0x34C2, and
+# B8B3/BD22 index them as ``byte[0x34AF + DS:34EA]``.  Therefore counter
+# value 1 reads 0x34B0, whose value is zero.  Older project notes shifted this
+# table by one slot, which made the first jump tick move up by 8px and broke the
+# original jump/fall modulo-16 alignment moments used by one-tile openings.
 # SAM1:0x28F35 initializes DS:34EA to 0x12. The standing B8B3 pass advances it
 # to the capped terminal fall speed on the next player tick.
 PLAYER_VERTICAL_COUNTER_INITIAL = 0x12
 PLAYER_VERTICAL_STEP_TABLE = (
-    0,
-    8, 8, 8, 4, 4, 2, 2, 2, 1, 1, 2, 2, 2, 4, 4, 8, 8, 8, 8,
+    0,  # index 0 is not normally consumed by B8B3/BD22 after their pre-increment
+    0, 8, 8, 8, 4, 4, 2, 2, 2, 1, 1, 2, 2, 2, 4, 4, 8, 8, 8,
 )
 
 # Separate DS:69F5/DS:69F6 hard-death/bounce path.  SAM1 initialises

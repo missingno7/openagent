@@ -122,6 +122,27 @@ class PushableBarrel:
     direction: int = 1
     grounded: bool = False
     fall_ticks: int = 0
+    # Raw 0xA7 starts as actor state 0x1388.  The destructive 0x1389 rewrites
+    # decoded at SAM1:0x8335/0x84B3 are projectile/body-overlap score effects,
+    # not the wall-push release path.  Wall-push pass-through is tracked
+    # separately so the barrel remains visible, top-solid, and pushable after
+    # the player clears it.
+    behavior_state: int = 0x1388
+    transient_ticks: int = 0
+    wall_release_active: bool = False
+    wall_release_push_step: int = 0
+    # Set once raw 0xA7 loses support and enters the reconstructed vertical
+    # actor phase.  While this is true, side contact may block the player but
+    # must not apply another horizontal push until the barrel lands.
+    falling_locked: bool = False
+
+    @property
+    def is_transient(self) -> bool:
+        return self.transient_ticks > 0 or self.behavior_state == 0x1389
+
+    @property
+    def body_pass_through(self) -> bool:
+        return self.is_transient or self.wall_release_active
 
     @property
     def left(self) -> int:
@@ -281,6 +302,13 @@ class Projectile:
     keep_on_player_hit: bool = False
     hit_w: int = 1
     hit_h: int = 1
+    # Collision anchor adjustment for EXE helper-0x53C4 projectile bodies.
+    # The renderer stores some horizontal projectile Y values as visual anchors
+    # (+7 so a 16px tile drawn at y-7 has the helper's top edge).  The damage
+    # rectangle still starts at the helper coordinate, so the hitbox can differ
+    # from the draw anchor without changing sprite placement.
+    hit_x_offset: int = 0
+    hit_y_offset: int = 0
     impact_visible_on_solid: bool = True
     impact_ticks_on_solid: int = 12
 

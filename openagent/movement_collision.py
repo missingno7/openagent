@@ -19,9 +19,9 @@ from .collision import (
 )
 from .entities import MovingPlatform, PushableBarrel
 from .game_constants import (
+    BARREL_ACTOR_STEP_PX,
     FALL_COUNTER_MAX,
     PLAYER_H,
-    PLAYER_VERTICAL_STEP_TABLE,
     PLAYER_W,
 )
 from .level_model import build_runtime_collision_grid, iter_map_cells
@@ -65,13 +65,13 @@ class MovementCollisionMixin:
                     if self.try_push_barrel(barrel, step):
                         pass
                     else:
-                        # EXE state 0x1388/0x1389 handles the barrel/player
-                        # overlap as a transient actor interaction instead of a
-                        # hard tile collision.  A blocked push enters a short
-                        # release/pass-through window; do not synthesize a
-                        # horizontal counter-nudge that the decoded branch does
-                        # not write to actor_x.
+                        # Do not map a wall-blocked push to the destructive
+                        # 0x1389/+score branch.  The original wall case behaves
+                        # as a body-pass-through/top-solid barrel until the
+                        # player clears through it, then the barrel reappears on
+                        # the free side.
                         self.release_barrel_against_wall(barrel, step)
+                self.update_wall_release_barrels()
                 if self.player_collides():
                     p.x -= step
                     blocked = True
@@ -110,6 +110,16 @@ class MovementCollisionMixin:
             p.x += step
             p.grounded = False
             return False
+        if self.has_active_wall_release_barrel():
+            # A wall-released raw 0xA7 is no longer returned by
+            # player_touching_barrel() because its body is pass-through.  Keep
+            # using the reconstructed pixel path until the release window
+            # resolves, otherwise update_wall_release_barrels() is never polled
+            # by the normal atomic movement path and the barrel stays stuck at
+            # the wall forever.  The underlying ASM actor branch is evaluated
+            # once per game tick while state 0x1388 remains active, so this is
+            # a control-flow fix rather than a new gameplay state.
+            return self.move_axis_pixels(step, 0)
         old_x = p.x
         p.x += step
         barrel = self.player_touching_barrel()
@@ -262,6 +272,8 @@ class MovementCollisionMixin:
                         self.hurt_player()
                     return True
             for barrel in self.entities.barrels:
+                if self.barrel_body_is_pass_through(barrel):
+                    continue
                 if barrel is self._ignore_barrel_collision and self._ignore_barrel_collision_ticks > 0:
                     continue
                 if self.player_barrel_actor_overlap(barrel):
@@ -441,21 +453,61 @@ class MovementCollisionMixin:
         return False
 
     def update_barrels_tick(self) -> None:
+        kept_barrels: list[PushableBarrel] = []
         for barrel in self.entities.barrels:
+            if barrel.is_transient:
+                self.update_barrel_1389_transient(barrel)
+                if barrel.is_transient:
+                    kept_barrels.append(barrel)
+                elif barrel is self._ignore_barrel_collision:
+                    self._ignore_barrel_collision = None
+                    self._ignore_barrel_collision_ticks = 0
+                continue
+
             carry_player = self.barrel_below() is barrel and self.player.grounded
             landing_y = self.barrel_landing_y(barrel, barrel.y + TILE, barrel.y + TILE + 1)
             if landing_y is not None and landing_y >= barrel.y and abs(barrel.y - landing_y) <= 1.0:
                 barrel.y = landing_y
                 barrel.grounded = True
                 barrel.fall_ticks = 0
+                barrel.falling_locked = False
+                kept_barrels.append(barrel)
                 continue
             barrel.grounded = False
+            barrel.falling_locked = True
             barrel.fall_ticks = min(FALL_COUNTER_MAX, barrel.fall_ticks + 1)
-            fall_step = PLAYER_VERTICAL_STEP_TABLE[barrel.fall_ticks]
-            moved = self.move_barrel_vertical(barrel, fall_step)
+            # Do not reuse the player DS:34AF gravity table here. The raw
+            # 0xA7 branch is an actor record, and the currently decoded actor
+            # movement/spawn evidence points at a fixed 4px actor-style step.
+            # The exact 0x1388 pushed-off-edge store is still a research gap,
+            # so keep this as a small named constant instead of hiding it in
+            # the player motion table.
+            moved = self.move_barrel_vertical(barrel, BARREL_ACTOR_STEP_PX)
             if carry_player and moved:
                 self.player.y += moved
                 self.player.grounded = True
+            kept_barrels.append(barrel)
+        self.entities.barrels = kept_barrels
+
+    def update_barrel_1389_transient(self, barrel: PushableBarrel) -> None:
+        """Advance the ASM state-0x1389 raw-barrel transient one actor tick.
+
+        SAM1:0x854A..0x85B8 stores previous/current draw coordinates, subtracts
+        two pixels from ``DS:34D0`` with an absolute clamp at 0x10, decrements
+        ``DS:34DA``, and only then chooses the cleanup redraw path.  There is no
+        decoded write to ``DS:34CE``/actor X in this state, so the port must not
+        synthesize a horizontal snap when a wall-blocked push releases.
+        """
+        barrel.y = max(0x10, barrel.y - 2)
+        barrel.grounded = False
+        barrel.fall_ticks = 0
+        barrel.transient_ticks = max(0, barrel.transient_ticks - 1)
+        if barrel.transient_ticks == 0:
+            # SAM1:0x85BB marks DS:34EB=1 after the timer expires.  In the
+            # object-list runtime that means removing the actor from the live
+            # pushable-barrel list after its final cleanup tick.
+            barrel.behavior_state = 0
+
 
     def move_barrel_vertical(self, barrel: PushableBarrel, dy: int) -> int:
         """Move a falling raw-0xA7 barrel straight down.
@@ -476,6 +528,7 @@ class MovementCollisionMixin:
                 barrel.y = landing_y
                 barrel.grounded = True
                 barrel.fall_ticks = 0
+                barrel.falling_locked = False
                 return moved
             barrel.y += 1
             moved += 1
@@ -489,7 +542,7 @@ class MovementCollisionMixin:
             if self.cell_blocks_floor(tile_x, tile_y, prev_bottom=prev_bottom, new_bottom=new_bottom):
                 candidates.append(float(tile_y * TILE - TILE))
         for other in self.entities.barrels:
-            if other is barrel:
+            if other is barrel or self.barrel_top_is_pass_through(other):
                 continue
             horizontal = barrel.x + TILE - 1 >= other.x + 2 and barrel.x <= other.x + TILE - 3
             vertical = other.y <= new_bottom <= other.y + 4 and prev_bottom <= other.y + 1
@@ -552,19 +605,33 @@ class MovementCollisionMixin:
         return min(candidates) if candidates else None
 
     def update_barrel_overlap_state(self) -> None:
-        """Expire the transient pass-through state used for pushable barrels."""
+        """Mirror any temporary barrel/body pass-through state."""
         barrel = self._ignore_barrel_collision
         if barrel is None:
             return
-        if not self.player_overlaps_barrel(barrel):
+        if barrel not in self.entities.barrels or not barrel.body_pass_through:
             self._ignore_barrel_collision = None
             self._ignore_barrel_collision_ticks = 0
             return
-        self._ignore_barrel_collision_ticks = max(0, self._ignore_barrel_collision_ticks - 1)
-        if self._ignore_barrel_collision_ticks == 0:
-            # Do not re-enable collision while still deeply overlapped; that is
-            # what made the port look as if the barrel stuck to the player.
-            self._ignore_barrel_collision_ticks = 1
+        self._ignore_barrel_collision_ticks = max(
+            barrel.transient_ticks,
+            1 if barrel.wall_release_active else 0,
+        )
+
+    @staticmethod
+    def barrel_body_is_pass_through(barrel: PushableBarrel) -> bool:
+        return barrel.body_pass_through
+
+    @staticmethod
+    def barrel_top_is_pass_through(barrel: PushableBarrel) -> bool:
+        return barrel.is_transient
+
+    @staticmethod
+    def barrel_is_pass_through(barrel: PushableBarrel) -> bool:
+        # Backwards-compatible name for older checks.  Gameplay paths should
+        # use body/top-specific helpers because wall-release barrels are body-
+        # pass-through but still top-solid.
+        return barrel.body_pass_through
 
     @staticmethod
     def intervals_overlap_inclusive(a_left: float, a_right: float, b_left: float, b_right: float) -> bool:
@@ -603,25 +670,129 @@ class MovementCollisionMixin:
         return self.player_barrel_actor_overlap(barrel)
 
     def release_barrel_against_wall(self, barrel: PushableBarrel, push_step: int) -> None:
-        """Enter the EXE-style raw-0xA7 blocked-push release window.
+        """Enter the wall-blocked barrel pass-through mode.
 
-        The disassembly around SAM1:0x83C4..0x848A checks the player's
-        shrunken overlap against object id 0x00A7 and transitions the actor
-        instead of treating it as an ordinary solid tile.  The following state
-        writes DS:34DA=0x10 and adjusts the actor's vertical transient; no
-        decoded instruction writes a horizontal counter-step to actor_x.  The
-        Python port therefore flips the displayed direction and temporarily
-        ignores player/barrel body collision, but it must not pop the barrel
-        sideways away from the wall.
+        Pass 122 incorrectly mapped blocked pushes onto SAM1:0x848A..0x84E9.
+        That branch is now treated as a destructive/score overlap path and is
+        *not* used for wall pushing.  The wall case observed in DOS keeps the raw
+        0xA7 visible and top-solid while allowing body overlap until the player
+        has crossed through it; at that point the barrel is restored on the free
+        side of the player.  The exact ASM store for the side-restoration step is
+        still open, so this helper is deliberately small and guarded by tests.
         """
-        barrel.direction = -push_step
+        if barrel.is_transient:
+            return
+        barrel.code = 0xA7
+        barrel.behavior_state = 0x1388
+        barrel.transient_ticks = 0
+        barrel.wall_release_active = True
+        barrel.wall_release_push_step = 1 if push_step > 0 else -1
+        barrel.direction = -barrel.wall_release_push_step
         self._ignore_barrel_collision = barrel
-        self._ignore_barrel_collision_ticks = 0x10
+        self._ignore_barrel_collision_ticks = 1
+
+    def has_active_wall_release_barrel(self) -> bool:
+        return any(getattr(barrel, "wall_release_active", False) for barrel in self.entities.barrels)
+
+    def update_wall_release_barrels(self) -> None:
+        """Maintain/snap barrels in the wall-pass-through release window.
+
+        The DOS wall case is not the destructive 0x1389 score branch: the raw
+        barrel remains visible/top-solid while the player can pass through its
+        body.  Pass 124 waited for a live front-wall probe, which made the
+        handoff happen too late.  The useful ASM evidence is the raw-0xA7
+        actor/player rectangle at SAM1:0x83C4..0x842F: both X intervals are
+        `x+3..x+12`.  Restore the barrel once the player's leading shrunken
+        edge has crossed the barrel's leading shrunken edge, then place the
+        barrel just outside that same shrunken interval.  This makes the snap
+        occur before the player's full 16px sprite touches the wall and produces
+        the observed roughly ten-pixel retreat instead of a full-tile jump.
+        """
+        for barrel in list(self.entities.barrels):
+            if not getattr(barrel, "wall_release_active", False):
+                continue
+            if not self.player_barrel_actor_overlap(barrel):
+                barrel.wall_release_active = False
+                barrel.wall_release_push_step = 0
+                if self._ignore_barrel_collision is barrel:
+                    self._ignore_barrel_collision = None
+                    self._ignore_barrel_collision_ticks = 0
+                continue
+            push_step = 1 if barrel.wall_release_push_step >= 0 else -1
+            if not self.player_crossed_wall_release_barrel(barrel, push_step):
+                continue
+            if not self.restore_wall_release_barrel_to_free_side(barrel, push_step):
+                continue
+
+    def player_crossed_wall_release_barrel(self, barrel: PushableBarrel, push_step: int) -> bool:
+        """Return whether the player crossed the barrel's leading ASM edge.
+
+        SAM1:0x83C4..0x842F uses inclusive shrunken X intervals (`x+3..x+12`)
+        for both the player and the raw-0xA7 actor.  For a right-wall push, the
+        handoff should occur as soon as the player's right shrunken edge reaches
+        the barrel's right shrunken edge; the mirrored left case uses the left
+        shrunken edge.  This is earlier than checking a full body probe against
+        the wall and avoids the pass-124 late snap.
+        """
+        p = self.player
+        if push_step > 0:
+            return p.x + PLAYER_COLLISION_RIGHT >= barrel.x + PLAYER_COLLISION_RIGHT
+        return p.x + PLAYER_COLLISION_LEFT <= barrel.x + PLAYER_COLLISION_LEFT
+
+    def player_front_wall_for_barrel_release(self, push_step: int) -> bool:
+        """Legacy pass-124 probe kept for old diagnostics.
+
+        The active handoff no longer waits for this probe: DOS observation and
+        the raw-0xA7 ASM overlap rectangle indicate that the barrel retreats
+        before the full 16px player sprite reaches the wall.
+        """
+        p = self.player
+        if push_step > 0:
+            sample_x = int(p.x + PLAYER_COLLISION_RIGHT + 1)
+        else:
+            sample_x = int(p.x + PLAYER_COLLISION_LEFT - 1)
+        tile_x = sample_x // TILE
+        top_y = int(p.y + PLAYER_COLLISION_TOP) // TILE
+        bottom_y = int(p.y + PLAYER_COLLISION_BOTTOM) // TILE
+        return self.cell_blocks_body(tile_x, top_y) or self.cell_blocks_body(tile_x, bottom_y)
+
+    def restore_wall_release_barrel_to_free_side(self, barrel: PushableBarrel, push_step: int) -> bool:
+        """Place the released barrel just outside the player's ASM rectangle.
+
+        The snap distance is not a full 16px tile.  Using the same inclusive
+        `x+3..x+12` interval as SAM1:0x83C4..0x842F, the nearest non-overlap
+        position is one pixel outside the player's shrunken side:
+
+        * right-wall case: `barrel.x + 12 < player.x + 3`, so `barrel.x = player.x - 10`;
+        * left-wall case:  `player.x + 12 < barrel.x + 3`, so `barrel.x = player.x + 10`.
+
+        This produces the small ~10/11px retreat seen in DOS instead of moving
+        the barrel by a whole tile.
+        """
+        clearance = PLAYER_COLLISION_RIGHT - PLAYER_COLLISION_LEFT + 1
+        if push_step > 0:
+            candidate_x = self.player.x - clearance
+        else:
+            candidate_x = self.player.x + clearance
+        old_x = barrel.x
+        barrel.x = float(candidate_x)
+        if self.barrel_collides(barrel):
+            barrel.x = old_x
+            return False
+        barrel.wall_release_active = False
+        barrel.wall_release_push_step = 0
+        barrel.direction = -push_step
+        if self._ignore_barrel_collision is barrel:
+            self._ignore_barrel_collision = None
+            self._ignore_barrel_collision_ticks = 0
+        return True
 
     def barrel_below(self) -> PushableBarrel | None:
         p = self.player
         player_bottom = p.y + PLAYER_H
         for barrel in self.entities.barrels:
+            if self.barrel_top_is_pass_through(barrel):
+                continue
             horizontal = self.player_barrel_horizontal_overlap(barrel)
             vertical = barrel.y <= player_bottom <= barrel.y + 4
             if horizontal and vertical:
@@ -634,19 +805,49 @@ class MovementCollisionMixin:
         new_base = new_bottom + 1
         candidates: list[float] = []
         for barrel in self.entities.barrels:
+            if self.barrel_top_is_pass_through(barrel):
+                continue
             horizontal = self.player_barrel_horizontal_overlap(barrel)
             vertical = prev_base <= barrel.y <= new_base
             if horizontal and vertical:
                 candidates.append(float(barrel.y - PLAYER_H))
         return min(candidates) if candidates else None
 
+    def barrel_is_falling_actor(self, barrel: PushableBarrel) -> bool:
+        """Return whether raw 0xA7 is in the unsupported vertical actor phase.
+
+        The actor prelude at SAM1:0x81C8..0x8288 computes candidate X and Y
+        independently from DS:34E2/DS:34E4/DS:34E6.  Once a pushed barrel has
+        no floor probe below it, the original behaves as a vertical falling actor
+        rather than as a still-pushable side body.  Use an explicit lock bit so
+        freshly extracted barrels are not treated as falling before their first
+        support refresh, while a barrel pushed off an edge becomes unpushable
+        immediately within the same player tick.
+        """
+        if barrel.is_transient or getattr(barrel, "wall_release_active", False):
+            return False
+        if barrel.grounded:
+            return False
+        if getattr(barrel, "falling_locked", False):
+            return True
+        return barrel.fall_ticks > 0 and self.barrel_landing_y(barrel, barrel.y + TILE, barrel.y + TILE + 1) is None
+
     def player_touching_barrel(self) -> PushableBarrel | None:
         for barrel in self.entities.barrels:
+            if self.barrel_body_is_pass_through(barrel):
+                continue
+            if self.barrel_is_falling_actor(barrel):
+                # Unsupported raw-0xA7 is in its vertical actor phase.  It may
+                # still block as a body via player_dynamic_body_collides(), but
+                # player side contact must not apply another horizontal push.
+                continue
             if self.player_overlaps_barrel(barrel):
                 return barrel
         return None
 
     def barrel_collides(self, barrel: PushableBarrel) -> bool:
+        if self.barrel_top_is_pass_through(barrel):
+            return False
         left = int(barrel.x) // TILE
         right = int(barrel.x + TILE - 1) // TILE
         top = int(barrel.y) // TILE
@@ -656,26 +857,33 @@ class MovementCollisionMixin:
                 if self.cell_solid(x, y):
                     return True
         for other in self.entities.barrels:
-            if other is barrel:
+            if other is barrel or self.barrel_top_is_pass_through(other):
                 continue
             if barrel.x + TILE - 1 >= other.x and barrel.x <= other.x + TILE - 1 and barrel.y + TILE - 1 >= other.y and barrel.y <= other.y + TILE - 1:
                 return True
         return False
 
-    def try_push_barrel(self, barrel: PushableBarrel, step: int) -> bool:
+    def try_push_barrel(self, barrel: PushableBarrel, step: int, distance: int = BARREL_ACTOR_STEP_PX) -> bool:
         old_x = barrel.x
-        barrel.x += step
+        push_distance = max(1, int(distance))
+        barrel.x += step * push_distance
         if self.barrel_collides(barrel):
             barrel.x = old_x
             return False
         barrel.direction = step
-        # A successful horizontal push can move raw 0xA7 off the last support
-        # pixel before the barrel actor's gravity state runs.  Mark it
-        # unsupported immediately so any same-tick carrier/contact logic does
-        # not keep treating the old floor as valid.  The actual fall distance is
-        # still resolved by update_barrels_tick()/move_barrel_vertical().
+        # Successful raw-0xA7 pushes use the actor-style 4px displacement, not
+        # the player's current 1/2/4px acceleration substep. That keeps a
+        # very short player tap from nudging the barrel by only one pixel.
+        # After the horizontal displacement, immediately re-sample support so
+        # the next actor tick can enter the pushed-off-edge fall path.
         if self.barrel_landing_y(barrel, barrel.y + TILE, barrel.y + TILE + 1) is None:
+            # From this point until the next landing, the actor is in the
+            # reconstructed falling phase.  player_touching_barrel() will no
+            # longer return it for side pushes, so holding against the barrel
+            # cannot keep sliding it horizontally while it drops past the edge.
             barrel.grounded = False
+            barrel.fall_ticks = 0
+            barrel.falling_locked = True
         return True
 
     def player_on_platform(self) -> bool:

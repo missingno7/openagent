@@ -1,6 +1,6 @@
 # Next Research Queue
 
-Highest-value unknowns after pass 121.
+Highest-value unknowns after pass 130.
 
 Start new accuracy work from `docs/TICK_ACCURACY_LEDGER.md`, not by scanning random pass logs. The ledger now links each tick phase to concrete ASM refs, Python entrypoints, blind spots and regression tests.
 
@@ -29,18 +29,19 @@ Start new accuracy work from `docs/TICK_ACCURACY_LEDGER.md`, not by scanning ran
 ## Projectiles and enemy hit behavior
 
 1. Finish the projectile object/state table: player bullet, enemy bullet, lightning, shrapnel, and non-laser object families; passes 96-97 now separate object-`0x72/state 0x25` from `0x00C7 -> 0x72/state 0x89` and confirm their shared player-origin 10x16 hit rectangle.
-2. Recheck the related stationary launcher pair `0x3C/0x3D`; passes 120-121 corrected raw `0x51/0x52` to non-solid/non-contact bodies in both movement helpers and the global touch fallback while preserving the pass-119 firing cadence/origin work.
+2. Complete the `0x547C` impact branch for stationary shots/rockets: pass 129 traces `0x51/0x52` shot `0x01D6` and `0x3C/0x3D` rockets `0x01E8/0x01EC` as player-pass-through hurt objects, but solid impact effects are still approximated.
 3. Verify when projectile impact spark is visible and when the projectile slot is just consumed.
 4. Confirm per-enemy HP/timer fields where `DS:34DC` is overloaded as both HP-like state and countdown.
 5. Rebuild object-`0x72` map-collision foreground redraw side effects around `SAM1:0xA2AF..0xA604` / `0xA4CB..0xA604`; hit rectangle policy is now handled by pass 97.
 
 ## Remaining gameplay mechanics
 
-1. Exact overworld entrance dispatch/progression flags beyond the runtime-local checked-house redraw.
-2. Door/key variants beyond the dynamite exit.
-3. Moving platforms and hidden platforms against exact runtime collision writes.
-4. Raw `0xA7` remaining actor-state details beyond pass 121: the player/barrel overlap rectangle and no-horizontal-side-pop release are guarded, but exact `0x1388 -> 0x1389` timing/animation, pushed-off-edge fall timing, score/sound side effects, helper `0x547C`, and DOSBox reference capture for blocked pushes/multiple dynamic actors remain open.
-5. Animated decorative tiles that still use heuristic frame ranges.
+1. Trace the normal player-control wrapper around `BC0E` and the horizontal control path (`0x520:0x68F5 / 0x520:0x6A0E`) and compare the pass-130/pass-131 one-tile opening fix plus corrected `DS:34AF` table indexing against DOSBox pixel captures.
+2. Exact overworld entrance dispatch/progression flags beyond the runtime-local checked-house redraw.
+3. Door/key variants beyond the dynamite exit.
+4. Moving platforms and hidden platforms against exact runtime collision writes.
+5. Raw `0xA7` remaining details beyond pass 128: player/barrel overlap geometry is guarded, pass 123 prevents wall-blocked pushes from entering the destructive `0x00AA/state 0x1389` score branch, pass 125/pass 126 cover the current wall-release reconstruction and polling fix, pass 127 moves ordinary barrel push/fall onto a named 4px actor-step reconstruction instead of the player `DS:34AF` table, and pass 128 prevents side-pushing while the barrel is in the unsupported falling phase. Remaining work is the exact wall-blocked caller/store ASM and DOSBox pixel timing, exact pushed-off-edge state/store timing, helper `0x547C` projectile-hit behavior, redraw cleanup fidelity, and reference capture for partial-overlap/multiple-dynamic-actor cases.
+6. Animated decorative tiles that still use heuristic frame ranges.
 
 ## Build hygiene
 
@@ -70,7 +71,7 @@ Highest priority suspects:
 - `animated_decor_tiles`
 - `enemy_0x63_ceiling_laser` — core state path consolidated in passes 94-96; remaining work is ceiling-track probe and state-0x89 impact/map-redraw reference test.
 - `player_death_lifecycle`
-- `projectile_policy` — hit rectangle split improved in pass 97 and raw `0x51/0x52` cadence/body policy improved in passes 119-121; remaining work is object/state table, broader generic body-contact allowlist, and impact/redraw side effects.
+- `projectile_policy` — hit rectangle split improved in pass 97, raw `0x51/0x52` cadence/body policy improved in passes 119-121, and pass 129 confirms stationary shots/rockets hurt but pass through the player; remaining work is object/state table, broader generic body-contact allowlist, and impact/redraw side effects.
 - `overworld_logic`
 
 

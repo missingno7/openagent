@@ -187,3 +187,16 @@ Audited raw `0x24` / object `0x0065` HP.  The init value `DS:34DC = 3` is not tr
 | 116 | Rechecked raw `0xA7` barrel gravity: the vertical fall step keeps X fixed and uses only landing probes, while broad body collision remains limited to horizontal pushes. |
 | 117 | Added the tick-accuracy ledger and annotated ASM map for future accuracy passes. |
 | 118 | Rechecked raw `0xA7` player/barrel overlap: `SAM1:0x83C4..0x848A` uses `x+3..x+12`, `y..y+15`, now mirrored by `player_barrel_actor_overlap()` and covered by a regression test. |
+| 119 | Re-audited raw `0x51/0x52` stationary launchers; fixed elapsed firing cadence and projectile helper origin, with body policy corrected by pass 120. |
+| 120 | Corrected raw `0x51/0x52` to non-solid/non-contact bodies and removed unsupported barrel release side-nudge. |
+| 121 | Closed the remaining generic `check_enemy_touch()` damage fallback for raw `0x51/0x52`. |
+| 122 | Superseded by pass 123: incorrectly mapped raw `0xA7` wall release to the destructive `0x00AA/state 0x1389` score branch. |
+| 123 | Corrected raw `0xA7` wall-blocked push to keep raw `0xA7/state 0x1388` body-pass-through/top-solid instead of using the destructive branch. |
+| 124 | Tried a crossed-through + live front-wall probe for raw `0xA7` wall-release restoration; pass 125 corrects this as too late. |
+| 125 | Corrected raw `0xA7` wall-release timing to use the ASM shrunken `x+3..x+12` leading-edge crossing and ~10px just-outside-interval restoration. |
+| 126 | Fixed a runtime-only wall-release control-flow regression: pass-through barrels are skipped by `player_touching_barrel()`, so active release windows now force per-pixel horizontal polling until restoration completes and the barrel is normal pushable `0xA7/state 0x1388` again. |
+| 127 | Rechecked raw `0xA7` ordinary push/fall: removed the unsupported use of the player `DS:34AF` vertical table for barrel gravity; raw barrel push and unsupported fall now use a named 4px actor-step reconstruction backed by actor-speed evidence, with exact pushed-off-edge store still open. |
+| 128 | Locked raw `0xA7` pushed-off-edge fall against side pushes: once support is lost, player contact can block but no longer calls `try_push_barrel()` until the barrel lands and clears the falling lock. |
+| 129 | Re-audited stationary launcher projectile policy: `0x01D6` shots and `0x01E8/0x01EC` rockets hurt through helper `0x53C4` but are not consumed by player contact; raw `0x3C/0x3D` rocket spawn offsets now follow ASM. |
+| 130 | Rechecked the one-tile opening jump case: normal player tick now runs the BC0E vertical fall/jump phase before the same-tick horizontal B7D9 destination probe, so a jump ascent or landing snap can align the 10x16 body with the passage before horizontal acceptance; exact outer wrapper trace remains partial. |
+| 131 | Fixed the player vertical table off-by-one: ASM initializes 0x34B0..0x34C2 but indexes with 0x34AF+DS:34EA, so counter 1 is a 0px jump tick and the fall after the apex gets a 1,1,2,2,2px sequence that restores tile alignment for one-tile openings. |

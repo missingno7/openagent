@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Regression checks for raw 0x51/0x52 stationary launcher actors.
+"""Regression checks for the stationary launcher actor family.
 
-SAM1 states 0x0A/0x0B keep DS:34DA as an elapsed timer.  The timer increments
-regardless of whether the player is currently in the same row; once charged it
-is reset only after the row+front gate succeeds and helper 0x5784 spawns the
-projectile.  Their bodies are not decoded as solid/contact hazards: raw
-0x51/0x52 are hostile through their projectile only, not by touching/blocking
-the player.
+SAM1 states 0x0A/0x0B/0x0C/0x0D keep DS:34DA as an elapsed timer.  The timer
+increments regardless of whether the player is currently in the same row; once
+charged it is reset only after the row+front gate succeeds and helper 0x5784
+spawns the projectile.  Raw 0x51/0x52 bodies are not decoded as solid/contact
+hazards: they are hostile through their projectile only.  Pass 129 also checks
+that 0x01D6 shots and 0x01E8/0x01EC rockets hurt but pass through the player.
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from openagent.entities import Enemy, LevelEntities
-from openagent.exe_actor_mechanics import SPECIAL_ACTOR_MODELS
+from openagent.exe_actor_mechanics import SPECIAL_ACTOR_MODELS, STATIONARY_SHOOTER_DIRECTION
 from openagent.game_assets.constants import TILE
 from openagent.movement_collision import MovementCollisionMixin
 from openagent.player import Player
@@ -45,6 +45,16 @@ class StationaryRuntimeProbe(OpenAgentApp):
     def hurt_player(self) -> None:
         self.hurt_calls += 1
         self.hurt_flash = 1.0
+
+    def kill_player(self) -> None:
+        self.hurt_calls += 1
+        self.hurt_flash = 1.0
+
+    def cell_blocks_body(self, x: int, y: int) -> bool:
+        return False
+
+    def cell_solid(self, x: int, y: int) -> bool:
+        return False
 
     def platform_carry_contact_asm(self, platform) -> bool:
         return False
@@ -94,7 +104,7 @@ class StationaryCollisionProbe(MovementCollisionMixin):
 
 def make_stationary(code: int, *, x: float = 64.0, y: float = 64.0, timer: int = 3) -> Enemy:
     model = SPECIAL_ACTOR_MODELS[code]
-    direction = 1 if code == 0x52 else -1
+    direction = STATIONARY_SHOOTER_DIRECTION[code]
     return Enemy(
         x,
         y,
@@ -150,6 +160,86 @@ def check_left_facing_launcher_uses_negative_gate_and_offset() -> None:
     assert shot.direction == -1
 
 
+
+
+def check_right_rocket_launcher_uses_state0e_spawn_and_passes_through_player() -> None:
+    enemy = make_stationary(0x3C, x=64.0, y=64.0, timer=1)
+    probe = StationaryRuntimeProbe(enemy)
+    probe.player.x = enemy.x + 32
+    probe.player.y = enemy.y
+
+    OpenAgentApp.update_entities_tick(probe)  # type: ignore[arg-type]
+
+    assert len(probe.entities.projectiles) == 1
+    shot = probe.entities.projectiles[0]
+    assert shot.x == enemy.x + 16
+    assert shot.y == enemy.y + 7
+    assert shot.direction == 1
+    assert shot.bank == 4 and shot.tile_right == 37 and shot.tile_left == 41
+    assert shot.keep_on_player_hit
+    assert shot.narrow_hurt_on_hit
+    assert shot.hit_y_offset == -7
+
+    old_x = shot.x
+    probe.player.x = shot.x + 4
+    probe.player.y = enemy.y
+    OpenAgentApp.update_projectiles_tick(probe)  # type: ignore[arg-type]
+
+    assert probe.hurt_calls == 1
+    assert len(probe.entities.projectiles) == 1
+    assert not probe.entities.projectiles[0].is_impact
+    assert probe.entities.projectiles[0].x == old_x + 4
+
+
+def check_left_rocket_launcher_uses_negative_offset_and_passes_through_player() -> None:
+    enemy = make_stationary(0x3D, x=80.0, y=64.0, timer=1)
+    probe = StationaryRuntimeProbe(enemy)
+    probe.player.x = enemy.x - 32
+    probe.player.y = enemy.y
+
+    OpenAgentApp.update_entities_tick(probe)  # type: ignore[arg-type]
+
+    assert len(probe.entities.projectiles) == 1
+    shot = probe.entities.projectiles[0]
+    assert shot.x == enemy.x - 16
+    assert shot.y == enemy.y + 7
+    assert shot.direction == -1
+    assert shot.bank == 4 and shot.tile_right == 37 and shot.tile_left == 41
+
+    old_x = shot.x
+    probe.player.x = shot.x - 4
+    probe.player.y = enemy.y
+    OpenAgentApp.update_projectiles_tick(probe)  # type: ignore[arg-type]
+
+    assert probe.hurt_calls == 1
+    assert len(probe.entities.projectiles) == 1
+    assert not probe.entities.projectiles[0].is_impact
+    assert probe.entities.projectiles[0].x == old_x - 4
+
+
+def check_0x51_0x52_projectile_passes_through_player_after_hurt() -> None:
+    enemy = make_stationary(0x52, x=64.0, y=64.0, timer=1)
+    probe = StationaryRuntimeProbe(enemy)
+    probe.player.x = enemy.x + 32
+    probe.player.y = enemy.y
+
+    OpenAgentApp.update_entities_tick(probe)  # type: ignore[arg-type]
+
+    assert len(probe.entities.projectiles) == 1
+    shot = probe.entities.projectiles[0]
+    assert shot.keep_on_player_hit
+    assert shot.narrow_hurt_on_hit
+    old_x = shot.x
+    probe.player.x = shot.x + 4
+    probe.player.y = enemy.y
+
+    OpenAgentApp.update_projectiles_tick(probe)  # type: ignore[arg-type]
+
+    assert probe.hurt_calls == 1
+    assert len(probe.entities.projectiles) == 1
+    assert not probe.entities.projectiles[0].is_impact
+    assert probe.entities.projectiles[0].x == old_x + 4
+
 def check_body_contact_is_harmless() -> None:
     enemy = make_stationary(0x52)
     probe = StationaryRuntimeProbe(enemy)
@@ -192,6 +282,9 @@ def check_actor_body_does_not_block_player_movement() -> None:
 def main() -> int:
     check_elapsed_timer_charges_before_line_of_sight()
     check_left_facing_launcher_uses_negative_gate_and_offset()
+    check_right_rocket_launcher_uses_state0e_spawn_and_passes_through_player()
+    check_left_rocket_launcher_uses_negative_offset_and_passes_through_player()
+    check_0x51_0x52_projectile_passes_through_player_after_hurt()
     check_body_contact_is_harmless()
     check_global_enemy_touch_pass_does_not_hurt_stationary_launcher()
     check_actor_body_does_not_block_player_movement()
