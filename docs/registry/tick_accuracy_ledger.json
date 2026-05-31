@@ -1,0 +1,380 @@
+{
+  "schema_version": 1,
+  "purpose": "Single source of truth for tick-accurate runtime work: ASM references, Python entrypoints, current confidence, blind spots, and regression tests.",
+  "status_legend": {
+    "asm_verified": "The runtime behavior is intentionally matched to a concrete ASM branch/address and covered by enough checks for current use.",
+    "asm_partial": "The runtime behavior has ASM evidence, but timing, edge cases, or state transitions are still incomplete.",
+    "data_verified": "Data/asset mapping is confirmed, but runtime behavior is not fully traced.",
+    "heuristic": "Implemented from observation or inference, not yet backed by concrete ASM.",
+    "known_wrong": "A mismatch against the original is known and documented.",
+    "unimplemented": "Tracked but not yet implemented."
+  },
+  "phases": [
+    {
+      "id": "mission_fixed_tick_order",
+      "title": "Mission fixed DOS tick ordering",
+      "status": "asm_partial",
+      "registry_ids": [
+        "player_death_lifecycle",
+        "player_mission_movement"
+      ],
+      "runtime_entrypoints": [
+        "openagent/runtime.py::update_mission_simulation"
+      ],
+      "asm_refs": [
+        "SAM1:0x1A21..0x1B5D",
+        "SAM1:0x1A61..0x1AE8"
+      ],
+      "evidence_docs": [
+        "docs/passes/exe_mechanisms_pass105.md",
+        "docs/passes/exe_mechanisms_pass106.md"
+      ],
+      "exact_claims": [
+        "One DOS tick snapshots dynamic render positions before simulation mutation.",
+        "When DS:69F5/DS:69F6 death state is active, the death branch runs before actor updates instead of freezing actors.",
+        "The moving-platform carry branch can still catch the death sprite after the death arc mutates Y on the same tick."
+      ],
+      "blind_spots": [
+        "The full mission loop around 0x1B5D is not yet represented as a named phase table.",
+        "The restart helper at 0x520:0x011A is still only partially understood, so tick-order after death expiration is approximate.",
+        "Some interaction dispatch inside update_player_interactions is still broad and should be split into exact subphases."
+      ],
+      "tests": [
+        "tools/check_death_camera_platform.py",
+        "tools/check_death_reset.py"
+      ],
+      "next_actions": [
+        "Trace the post-0x1B5D actor/update call chain into a named tick phase map.",
+        "Split update_player_interactions into ordered ASM-backed subdispatchers.",
+        "Trace 0x520:0x011A persistence/game-over behavior."
+      ]
+    },
+    {
+      "id": "player_death_arc",
+      "title": "Hard-death bounce arc and clamp",
+      "status": "asm_partial",
+      "registry_ids": [
+        "player_death_lifecycle"
+      ],
+      "runtime_entrypoints": [
+        "openagent/runtime.py::update_player_death_tick",
+        "openagent/player_lifecycle.py::advance_death_bounce_tick"
+      ],
+      "asm_refs": [
+        "SAM1:0x1A61..0x1AE8",
+        "DS:69F5",
+        "DS:69F6",
+        "DS:34F0",
+        "DS:683A"
+      ],
+      "evidence_docs": [
+        "docs/passes/exe_mechanisms_pass57.md",
+        "docs/passes/exe_mechanisms_pass92.md",
+        "docs/passes/exe_mechanisms_pass105.md"
+      ],
+      "exact_claims": [
+        "DS:69F6 starts at 0x23 and indexes a signed word table.",
+        "The table value is subtracted from player Y, so positive values move up and negative values move down.",
+        "Y clamps between 0x10 and DS:683A + 0xB8 without normal collision."
+      ],
+      "blind_spots": [
+        "Exact two-cel death draw timing still needs frame-by-frame DOSBox validation.",
+        "The lives-zero game-over/menu branch is still approximated.",
+        "Exact score/ammo/inventory persistence through the restart helper is not fully traced."
+      ],
+      "tests": [
+        "tools/check_death_reset.py",
+        "tools/check_death_camera_platform.py"
+      ],
+      "next_actions": [
+        "Extract the death signed-step table into a documented exe_* module with the ASM table offset.",
+        "Trace 0x520:0x011A and update reset/persistence semantics.",
+        "Capture DOSBox reference frames for death sprite/camera clamp timing."
+      ]
+    },
+    {
+      "id": "normal_player_motion",
+      "title": "Normal mission horizontal, jump, and fall motion",
+      "status": "asm_partial",
+      "registry_ids": [
+        "player_mission_movement"
+      ],
+      "runtime_entrypoints": [
+        "openagent/player_motion.py::update_player_tick",
+        "openagent/movement_collision.py::move_player_horizontal_tick",
+        "openagent/movement_collision.py::move_player_fall_tick",
+        "openagent/movement_collision.py::move_player_upward_tick"
+      ],
+      "asm_refs": [
+        "SAM1:0x532D..0x53C0",
+        "SAM1:0xB7D9..0xB8A4",
+        "SAM1:0xB8B3..0xBA49",
+        "SAM1:0xBCED..0xBD80",
+        "DS:681E",
+        "DS:34AF",
+        "DS:34EA",
+        "DS:6EC1"
+      ],
+      "evidence_docs": [
+        "docs/passes/exe_mechanisms_pass9.md",
+        "docs/passes/exe_mechanisms_pass12.md",
+        "docs/passes/exe_mechanisms_pass80.md",
+        "docs/passes/exe_mechanisms_pass81.md",
+        "docs/passes/exe_mechanisms_pass82.md",
+        "docs/passes/exe_mechanisms_pass83.md",
+        "docs/passes/exe_mechanisms_pass84.md"
+      ],
+      "exact_claims": [
+        "Horizontal movement uses the EXE-style step ramp and atomic destination probes for normal map collision.",
+        "Normal falling uses the 34EA/34AF table and the B8B3 static landing probes.",
+        "The upward jump probe is separate from the downward fall probe."
+      ],
+      "blind_spots": [
+        "The raw 0x62 dynamic actor/player overlap branch is not fully isolated.",
+        "Actor-backed solid fall overlap remains a reconstruction around exact static probes.",
+        "Ladder/direct vertical flags DS:6EC3/DS:6EC4 are not implemented.",
+        "Difficulty modifiers DS:69B0/DS:69A4 are not modeled."
+      ],
+      "tests": [
+        "tools/check_render_interpolation.py"
+      ],
+      "next_actions": [
+        "Add deterministic motion probes for wall approach, ceiling hit, edge fall, and landing.",
+        "Trace DS:6EC3/DS:6EC4 ladder/direct vertical movement.",
+        "Isolate raw 0x62 actor/player branch and compare against current crossing reconstruction."
+      ]
+    },
+    {
+      "id": "pushable_barrel_0xa7",
+      "title": "Raw 0xA7 pushable barrel actor interaction",
+      "status": "asm_partial",
+      "registry_ids": [
+        "player_mission_movement"
+      ],
+      "runtime_entrypoints": [
+        "openagent/movement_collision.py::move_axis_pixels",
+        "openagent/movement_collision.py::try_push_barrel",
+        "openagent/movement_collision.py::move_barrel_vertical",
+        "openagent/movement_collision.py::release_barrel_against_wall",
+        "openagent/movement_collision.py::player_barrel_actor_overlap",
+        "openagent/movement_collision.py::player_barrel_horizontal_overlap"
+      ],
+      "asm_refs": [
+        "SAM1:0x82E3..0x8742",
+        "SAM1:0x8335",
+        "SAM1:0x83C4..0x848A",
+        "SAM1:0x8542..0x8742",
+        "SAM1:0x84B3",
+        "state 0x1388",
+        "state 0x1389",
+        "raw 0xA7"
+      ],
+      "evidence_docs": [
+        "docs/passes/exe_mechanisms_pass32.md",
+        "docs/passes/exe_mechanisms_pass37.md",
+        "docs/passes/exe_mechanisms_pass116.md",
+        "docs/passes/exe_mechanisms_pass118.md",
+        "docs/passes/exe_mechanisms_pass120.md",
+        "docs/passes/exe_mechanisms_pass121.md"
+      ],
+      "exact_claims": [
+        "Raw 0xA7 enters a special actor-family branch instead of behaving like a plain static solid tile.",
+        "SAM1:0x83C4..0x848A tests player/barrel contact with shrunken X intervals x+3..x+12 for both rectangles and full Y intervals y..y+15.",
+        "The runtime uses that ASM rectangle for player/barrel actor overlap, dynamic barrel body collision, and barrel top-contact horizontal eligibility.",
+        "The reconstructed vertical fall path keeps X fixed and only uses landing/foot probes; it does not use broad side-body collision to stop falling.",
+        "Horizontal barrel pushes still use broad barrel-vs-world collision for the barrel body itself.",
+        "Blocked-push release no longer performs an unsupported horizontal counter-nudge; it flips direction and enters a 0x10-tick transient ignore window.",
+        "A successful horizontal push that leaves the barrel without floor support marks it unsupported before the next fall tick."
+      ],
+      "blind_spots": [
+        "Exact 0x1388 -> 0x1389 animation/draw cleanup is annotated but not implemented as a separate Python actor state.",
+        "Score/sound side effects around the helper-hit and player-contact rewrite branches need confirmation in gameplay context.",
+        "Blocked-push release is still represented as a transient ignore instead of a full 0x1389 actor state, but pass 120 removed the unsupported horizontal nudge and uses a 0x10 tick window.",
+        "No DOSBox reference capture yet for pushing while partially overlapping another dynamic actor.",
+        "Pushed-off-edge fall timing and the 0x1389 release/cleanup state remain partial; pass 121 intentionally does not overclaim them as verified."
+      ],
+      "tests": [
+        "tools/check_barrel_vertical_fall.py",
+        "tools/check_barrel_player_interaction.py"
+      ],
+      "next_actions": [
+        "Model state 0x1389 explicitly or prove that the current transient representation is sufficient for gameplay.",
+        "Trace helper 0x547C in the raw-0xA7 branch to separate shot/hazard/floor causes from player contact.",
+        "Create a tiny DOSBox reference setup for blocked pushes, pushed-off-ledge timing, and barrel/player partial overlap.",
+        "Replace release_barrel_against_wall with a full 0x1389 actor-state model once draw/timer semantics are traced.",
+        "Trace the exact post-push unsupported transition and compare a pushed-off-edge barrel against a DOSBox reference capture."
+      ]
+    },
+    {
+      "id": "overworld_level0_tick",
+      "title": "Level-0 overworld movement, collision, camera, and entrance tick",
+      "status": "asm_partial",
+      "registry_ids": [
+        "overworld_logic"
+      ],
+      "runtime_entrypoints": [
+        "openagent/overworld.py::update_overworld_tick"
+      ],
+      "asm_refs": [
+        "SAM1:0xB7D9..0xB8B0",
+        "SAM1:0xBAF5..0xBC0A",
+        "CS:0x2E20",
+        "DS:681C",
+        "DS:6838",
+        "DS:683A",
+        "DS:3500",
+        "DS:34F6"
+      ],
+      "evidence_docs": [
+        "docs/passes/exe_mechanisms_pass77.md",
+        "docs/passes/exe_mechanisms_pass98.md",
+        "docs/passes/exe_mechanisms_pass99.md",
+        "docs/passes/exe_mechanisms_pass100.md",
+        "docs/passes/exe_mechanisms_pass101.md",
+        "docs/passes/exe_mechanisms_pass102.md",
+        "docs/OVERWORLD_RESEARCH.md"
+      ],
+      "exact_claims": [
+        "Level 0 uses the top-down branch when DS:681C == 1.",
+        "Movement checks the attempted offset before writing player position.",
+        "Collision samples the +0x1CC body byte at player-origin rectangle x+3/x+12 and y/y+15, ignoring +0x1CD.",
+        "Camera registers DS:6838/DS:683A use fixed margins rather than a centered camera helper."
+      ],
+      "blind_spots": [
+        "Entrance-to-level mapping is still row-major prototype behavior.",
+        "Persistent completion/progression flags are not fully traced.",
+        "Original popup/table windows are not implemented.",
+        "Remaining choke points need coordinate-specific DOSBox comparisons."
+      ],
+      "tests": [
+        "tools/check_overworld_collision.py"
+      ],
+      "next_actions": [
+        "Trace entrance marker dispatch and completion flag writes.",
+        "Implement original table/popup renderer before replacing prototype labels.",
+        "Add coordinate-specific overworld movement reference tests."
+      ]
+    },
+    {
+      "id": "animated_decor_contact_policy",
+      "title": "Animated decor and decorative/non-contact policy",
+      "status": "asm_partial",
+      "registry_ids": [
+        "animated_decor_tiles"
+      ],
+      "runtime_entrypoints": [
+        "openagent/animation.py",
+        "openagent/entities.py",
+        "openagent/rendering.py"
+      ],
+      "asm_refs": [
+        "SAM1:0xB599..0xB5FC",
+        "state 0x2B",
+        "state 0x2C",
+        "raw 0x40",
+        "raw 0x78",
+        "raw 0xD4",
+        "object 0x0131",
+        "object 0x0103"
+      ],
+      "evidence_docs": [
+        "docs/passes/exe_mechanisms_pass43.md",
+        "docs/passes/exe_mechanisms_pass53.md",
+        "docs/passes/exe_mechanisms_pass54.md",
+        "docs/passes/exe_mechanisms_pass91.md",
+        "docs/passes/exe_mechanisms_pass115.md"
+      ],
+      "exact_claims": [
+        "Raw 0x40 / object 0x0131 / state 0x2B advances animation counters and does not call the player-contact helper 0x53C4.",
+        "The lower cel of raw 0x40 is bank9:1 in the current model.",
+        "State 0x2C routes contact through an explicit object-0x0103 helper call."
+      ],
+      "blind_spots": [
+        "Frame sources should be generated from renderer/object ranges instead of hand-coded refs.",
+        "The full raw 0x78 frame-source family still needs a focused renderer-table audit.",
+        "Decor/hazard naming should be split so non-contact animated tiles do not inherit hazard assumptions."
+      ],
+      "tests": [
+        "tools/check_state2b_decorative.py"
+      ],
+      "next_actions": [
+        "Annotate state 0x2B/0x2C ASM branches next to renderer frame sources.",
+        "Generate frame-source tables from the original renderer data.",
+        "Add regression fixtures for raw 0x40 and raw 0x78 contact expectations."
+      ]
+    },
+    {
+      "id": "projectile_and_enemy_contact_tick",
+      "title": "Projectile, enemy contact, and hit policy tick",
+      "status": "asm_partial",
+      "registry_ids": [
+        "projectile_policy",
+        "enemy_0x63_ceiling_laser",
+        "enemy_0x24_helmet",
+        "enemy_0xae_dog",
+        "stationary_launchers_0x51_0x52"
+      ],
+      "runtime_entrypoints": [
+        "openagent/combat.py",
+        "openagent/runtime.py::update_entities_tick",
+        "openagent/entities.py::extract_level_entities",
+        "openagent/movement_collision.py::player_dynamic_body_collides",
+        "openagent/runtime.py::check_enemy_touch"
+      ],
+      "asm_refs": [
+        "SAM1:0x53C4",
+        "SAM1:0x5784",
+        "SAM1:0x9A25..0x9AB2",
+        "SAM1:0xA2AF..0xA604",
+        "object 0x72",
+        "state 0x25",
+        "state 0x89",
+        "SAM1:0x6B74..0x6D47",
+        "SAM1:0x6B88",
+        "SAM1:0x6C73",
+        "SAM1:0x6C0D..0x6C2D",
+        "SAM1:0x6CF8..0x6D18"
+      ],
+      "evidence_docs": [
+        "docs/passes/exe_mechanisms_pass46.md",
+        "docs/passes/exe_mechanisms_pass64.md",
+        "docs/passes/exe_mechanisms_pass94.md",
+        "docs/passes/exe_mechanisms_pass95.md",
+        "docs/passes/exe_mechanisms_pass96.md",
+        "docs/passes/exe_mechanisms_pass97.md",
+        "docs/passes/exe_mechanisms_pass26.md",
+        "docs/passes/exe_mechanisms_pass119.md",
+        "docs/passes/exe_mechanisms_pass120.md",
+        "docs/passes/exe_mechanisms_pass121.md"
+      ],
+      "exact_claims": [
+        "Ceiling laser state 0x21 has a strict player-origin x gate and uses actor_y+8 for spawned laser origin.",
+        "0x00C7 is rewritten to object 0x72/state 0x89 for ceiling beams.",
+        "Object 0x72 state 0x25 and state 0x89 have separated damage outcomes in the current runtime.",
+        "Stationary launcher states 0x0A/0x0B keep DS:34DA as an elapsed timer that increments before row/facing gates and resets only after a successful helper-0x5784 spawn.",
+        "Raw 0x52/state 0x0A fires object 0x01D6 at actor_x+8, actor_y, direction +1, speed 4 when actor_x < player_x and the row gate matches.",
+        "Raw 0x51/state 0x0B fires object 0x01D6 at actor_x-8, actor_y, direction -1, speed 4 when actor_x > player_x and the row gate matches.",
+        "Raw 0x51/0x52 actor bodies are not solid player blockers and do not hurt on body contact; their threat is projectile 0x01D6.",
+        "Stationary launcher helper 0x5784 receives actor_y; Python stores projectile.y = actor_y+7 only to compensate horizontal-projectile rendering at y-7.",
+        "Raw 0x51/0x52 stationary launchers are excluded from the generic body-touch fallback; only their emitted 0x01D6 projectile is hostile."
+      ],
+      "blind_spots": [
+        "The full projectile object/state table is incomplete.",
+        "Impact spark versus silent projectile consumption is only partially separated.",
+        "Object-0x72 foreground redraw and map-collision side effects are approximate.",
+        "The related raw 0x3C/0x3D stationary launcher body policy and render anchor still need a separate audit.",
+        "The generic enemy-body contact fallback is still exclusion-based; it needs a full ASM-derived allowlist so new actor kinds do not inherit damage accidentally."
+      ],
+      "tests": [
+        "tools/check_stationary_shooter_accuracy.py"
+      ],
+      "next_actions": [
+        "Build a complete projectile object/state table from ASM helper 0x5784 and dispatcher branches.",
+        "Add a projectile-policy regression script similar to the barrel/death checks.",
+        "Trace object-0x72 map-collision foreground redraw side effects.",
+        "Capture DOSBox row-boundary tests for raw 0x51/0x52 launchers after the firing cadence fix.",
+        "Audit check_enemy_touch() against the ASM contact dispatcher and turn the temporary exclusion list into a verified allowlist."
+      ]
+    }
+  ]
+}

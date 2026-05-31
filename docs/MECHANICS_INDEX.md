@@ -15,15 +15,16 @@ This is the quick orientation table. Detailed evidence remains in `docs/passes/`
 | Laser field `0x82` + computer `0x83` | Computer disables active lasers; laser is hard-death hazard | pass 41, pass 55 |
 | Water `0x60` | Runtime visual `0x01F3`; live two-frame render overlay; hard-death on touch | pass 20, pass 23, pass 85, pass 87 |
 | Dynamite `0x74` + exit `0x71` | Dynamite pickup; exit blast; broken passable upper/lower door tiles remain | pass 66-68 |
-| Landmine `0x4D` | Two-frame idle blink; touching idle mine immediately starts hard death and triggered actor | pass 53/54/63/87 |
+| Landmine `0x4D` | Two-frame idle blink; touching idle mine immediately starts hard death and triggered actor; triggered state keeps a single runtime actor and no longer spawns three persistent extra explosions | pass 53/54/63/87/91/113 |
 | Enemy `0x24` | Helmet walker/shooter; vulnerable only in open/stopped phase; closed helmet hit turns without damage/flash | pass 46-49, pass 54, pass 91 |
 | Enemy `0x58` | Bank-12 two-high state-0x1F shooter; closed top while walking, opens/fires while stopped, vulnerable only on top tile 19/31 | pass 45, pass 89, pass 91 |
 | Enemy `0x63` | Ceiling crawler laser shooter; state-0x21 track edge handling, strict player-origin `actor_x±16` firing gate, `actor_y+8` laser spawn, 0x53C4 narrow body-contact damage, and emitted `0x00C7 -> 0x72/state 0x89` narrow generic-hurt beam | pass 41, pass 94-96 |
+| Stationary launchers `0x51/0x52` | Non-solid/non-contact timed launchers; `DS:34DA` elapsed firing timer charges before row/front gate, fires object `0x01D6` immediately when charged and gated, with `x±8, actor_y` ASM helper origin and Python render-Y compensation; broad `check_enemy_touch()` fallback explicitly excludes their bodies | pass 26, pass 119-121 |
 | Dog `0xAE` | Direction-specific walk frame ranges; hit does not flip direction | pass 54 |
 | Money bag `0x5B` | Falling pickup state; 5000 points | pass 44 |
 | Contact bomb `0x75` | Contact fuse/explosion, 1000 score, shrapnel | pass 42 |
 | Up laser `0x76` | Stationary upward laser emitter; emits object `0x72/state 0x25`, which uses the narrow direct hard-death rectangle | pass 42, pass 96 |
-| Animated hazards/decor `0x40`, `0x78`, `0xD4` | `0x40` upper animation constrained to bank9 4..7; `0xD4`/`0x78` state-0x2C variants implemented; `0x78` contact uses the narrow 0x53C4 helper | pass 43, pass 53/54, pass 91, pass 94 |
+| Animated hazards/decor `0x40`, `0x78`, `0xD4` | `0x40` is decorative/non-contact: top animates through bank9 4..7 and lower cel is bank9:1; `0xD4`/`0x78` state-0x2C variants are implemented; `0x78` contact uses only the narrow 0x53C4 helper | pass 43, pass 53/54, pass 91, pass 94, pass 115 |
 | Lightning flyer `0x6E` | State 0x26 drive-stop-lightning cycle fixed | pass 69, pass 85 |
 | Fire walker `0x6D` | Bank-3 44..47 live contact hazard, immortal to player shots | pass 91 |
 | Satellite `0x23` | Rotating non-contact-damage target; player shots remove it for score after durability | pass 91 |

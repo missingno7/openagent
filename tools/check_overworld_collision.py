@@ -169,7 +169,7 @@ def main() -> int:
             check_episode(episode)
     finally:
         campaign.cleanup()
-    print("Overworld pass102 collision/motion/entry smoke OK.")
+    print("Overworld collision/motion/entry smoke OK.")
     return 0
 
 

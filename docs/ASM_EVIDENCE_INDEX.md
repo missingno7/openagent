@@ -3,6 +3,18 @@
 This is the human-readable companion to `docs/registry/mechanics_status.json`.
 It is intentionally concise: use it to find the current source of truth quickly.
 
+
+## Tick-accuracy entry points
+
+Use these when the question is not "what does this mechanic do?" but "does the Python tick happen in the same order as the EXE?"
+
+- Human map: `docs/TICK_ACCURACY_LEDGER.md`
+- Machine map: `docs/registry/tick_accuracy_ledger.json`
+- Annotated ASM working copy: `dissassembly/annotated/SAM1_tick_accuracy_excerpts.asm`
+- Audit: `python tools/audit_tick_accuracy.py`
+
+Current phase rows cover mission fixed tick order, hard-death arc, normal mission motion, raw `0xA7` barrel interaction, overworld level-0 tick, animated decor/contact policy, and projectile/enemy contact policy. Pass 118 tightens the raw-`0xA7` player/barrel contact rectangle from full-sprite overlap to the ASM `x+3..x+12`, `y..y+15` interval test. Pass 119 adds raw `0x51/0x52` stationary launcher cadence/origin; pass 120 corrects their movement/body helper policy back to non-solid/non-contact and documents the Python render-anchor compensation for projectile Y; pass 121 closes the remaining broad `check_enemy_touch()` fallback path.
+
 ## High confidence / mostly verified
 
 ### Laser field + computer
@@ -16,8 +28,8 @@ It is intentionally concise: use it to find the current source of truth quickly.
 - Raw: `0x4D`
 - Objects/states: `0x0270`, `0x0271/state 0x17`
 - Status: `asm_verified`
-- Evidence: pass 53, pass 54, pass 63
-- Important point: touching idle `0x0270` immediately starts player hard death; the later explosion frame is not the primary death trigger.
+- Evidence: pass 53, pass 54, pass 63, pass 113
+- Important point: touching idle `0x0270` immediately starts player hard death; the later explosion frame is not the primary death trigger. Pass 113 confirms the triggered `0x0271/state 0x17` blast uses direct draw/clear helper calls, not persistent extra explosion actors.
 
 ### Dynamite + exit door
 - Raw: `0x74`, `0x71`
@@ -49,7 +61,7 @@ It is intentionally concise: use it to find the current source of truth quickly.
 - Status: `asm_partial`
 - Evidence: pass 9, pass 12, pass 80-84
 - Confirmed: normal horizontal ramp, normal jump/fall shared table, apex transition tick, atomic falling, exact static `+0x1CC/+0x1CD` fall probes, and dynamic-platform crossing landing.
-- Current gaps: original dynamic-platform actor overlap branch, raw-`0xA7` barrel overlap fallback, actor-backed solid fall overlap, ladders/direct vertical movement, difficulty modifiers.
+- Current gaps: original dynamic-platform actor overlap branch, raw-`0xA7` `0x1389` state/timer side effects and blocked-push release, actor-backed solid fall overlap, ladders/direct vertical movement, difficulty modifiers.
 
 ### Enemy `0x24`
 - Object/state: `0x0065/state 0x27`
@@ -71,13 +83,24 @@ It is intentionally concise: use it to find the current source of truth quickly.
 - Confirmed: helper `0x5784` maps player/ordinary shots to state `0x07`; object `0x72` normally maps to state `0x25`, while ceiling-laser input object `0x00C7` is rewritten to object `0x72/state 0x89`; dispatcher order shows state `0x89` calls generic `0x53C4`, while state `0x25` owns the direct hard-death rectangle. Both narrow laser policies use the player's origin gameplay rectangle (`DS:34EE..+9`, `DS:34F0..+15`), not the full decoded sprite.
 - Current gaps: complete projectile object/state table, exact object-`0x72` foreground redraw policy, and exact impact-spark policy for non-laser projectiles.
 
+### Stationary launchers `0x51/0x52`
+- Raw/object/state: raw `0x52` -> object `0x01D0/state 0x0A` right-facing; raw `0x51` -> object `0x01D1/state 0x0B` left-facing.
+- Status: `asm_partial`, with firing cadence/origin now traced.
+- Evidence: pass 26, pass 119, pass 120, pass 121.
+- Confirmed: `SAM1:0x6B88/0x6C73` increments `DS:34DA` before the player row/front gate; the timer resets only after a successful helper `0x5784` spawn. The row gate compares `(player_y+8)&0xfff0` to `actor_y&0xfff0`. Raw `0x52` fires object `0x01D6` from `actor_x+8, actor_y`, direction `+1`, speed `4`; raw `0x51` fires from `actor_x-8, actor_y`, direction `-1`, speed `4`.
+- Confirmed negative policy: decoded shot-damage evidence from pass 29 does not include objects `0x01D0/0x01D1`; pass 120 removes the unsupported movement/body helper reconstruction that made them solid/contact-harmful; pass 121 also excludes them from the broad `check_enemy_touch()` fallback. They are hostile through emitted projectile `0x01D6`, not through body contact.
+- Python note: helper `0x5784` receives `actor_y`, while the runtime stores `Projectile.y = actor_y + 7` because ordinary horizontal projectile sprites render at `y-7`; the visible top therefore lines up with the ASM helper Y.
+- Current gaps: exact body-contact dispatcher absence for the related raw `0x3C/0x3D` launcher pair is still not separately audited.
+
+
 ## Low confidence / should audit next
 
 ### Animated decorations
 - Raw examples: `0x40`, `0x78`, `0xD4`
-- Status: `heuristic`
-- Evidence: pass 43, pass 53, pass 54
-- Current gaps: frame counts and frame sources should be data-driven, not guessed.
+- Status: `asm_partial`
+- Evidence: pass 43, pass 53, pass 54, pass 91, pass 115
+- Confirmed: raw `0x40` / object `0x0131` / state `0x2B` only advances `DS:34D8/34D6` in `SAM1:0xB599..0xB5FC` and does not call player-contact helper `0x53C4`; its lower cel is the bank9:1 part of the two-cell composite.  State `0x2C` only routes player contact through the explicit object-`0x0103` helper call.
+- Current gaps: object-family frame sources should be generated from renderer ranges rather than hand-coded bank/tile refs.
 
 ### Overworld and table popups
 - Status: `asm_partial` / `data_verified` split

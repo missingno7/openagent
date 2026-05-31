@@ -12,6 +12,11 @@ from .exe_runtime_collision import (
 WORLD_PLAYER_CODE = 0x59
 WORLD_ENTRANCE_CODES = frozenset({0x4D, 0x4E, 0x4F, 0x50})
 MISSION_PLAYER_START_CODE = 0x59
+WATER_CODE = 0x60
+# Runtime object visuals that immediately route to the player-death branch in
+# the EXE interaction dispatcher (SAM1:0xD221..0xD254).  The raw level bytes
+# that write these cA values include water 0x60 and several other hard hazards.
+HARD_DEATH_RUNTIME_VISUAL_IDS = frozenset({0x01F3, 0x025B, 0x0265, 0x0267, 0x0268})
 
 # World-map codes use a different table from mission levels.  Do not infer
 # overworld collision from visual raw-code families: pass 98 traces movement to

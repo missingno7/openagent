@@ -378,12 +378,15 @@ def state2b_tile(frame_counter: int) -> tuple[int, int]:
 def state2b_actor_refs(frame_counter: int) -> tuple[tuple[int, int, int, int], ...]:
     """Return the visible composite for raw 0x40/state 0x2B.
 
-    The EXE treats object 0x0131 as a two-cell decoration/trap with a static
-    lower body and the animated top above the map origin.  The animated part is
-    the bank9 4..7 family; tile 8 is the stable lower base seen under it.
+    The EXE treats object 0x0131 as a two-cell animated decoration.  Its
+    parser stores the origin one tile below the upper cel (Y is written from
+    ``map_y - 1``), so runtime rendering draws the animated bank9 4..7 cel at
+    ``(x, y - 16)`` and preserves the static lower cel at ``(x, y)``.  The
+    lower cel is bank9 tile 1, matching the raw map composite and the object
+    draw family selected by the 0x12D..0x15E renderer branch.
     """
     bank, top_tile = state2b_tile(frame_counter)
-    return ((0, -1, bank, top_tile), (0, 0, bank, 8))
+    return ((0, -1, bank, top_tile), (0, 0, 9, 1))
 
 def state2c_tile(code: int, frame_counter: int) -> tuple[int, int]:
     # State 0x2C advances DS:34D6, but the decoded sprite family is not a

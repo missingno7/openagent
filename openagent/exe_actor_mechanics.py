@@ -83,7 +83,9 @@ SATELLITE_SCORE = 100
 #     as a normal 3-HP enemy.
 #   * bank-14 guards are handled by their lower behaviour states/degrade path.
 # Static shooter/trap object ids 0x01D0/0x01D1/0x01E7/0x01EB are deliberately
-# absent: they behave as solid indestructible map actors, not enemies to kill.
+# absent from the shot-damage branches.  Do not infer body solidity or player
+# contact damage from that absence: pass 120 keeps raw 0x51/0x52 non-solid and
+# non-harmful except for their emitted projectile.
 SHOOTABLE_OBJECT_ID_RANGES: tuple[tuple[int, int], ...] = ((0x0321, 0x0383),)
 SHOOTABLE_OBJECT_IDS: frozenset[int] = frozenset({
     0x0353,
@@ -93,7 +95,7 @@ SHOOTABLE_OBJECT_IDS: frozenset[int] = frozenset({
     SHARK_SWIMMER_OBJECT_ID,
     0x0261,  # raw 0x7F/state 0x06 decrements DS:34D8 on hit, then dies at zero.
 })
-INDESTRUCTIBLE_SOLID_ACTOR_STATES: frozenset[int] = frozenset({0x0A, 0x0B, 0x0C, 0x0D, 0x0F, 0x10, 0x11, 0x12})
+INDESTRUCTIBLE_SOLID_ACTOR_STATES: frozenset[int] = frozenset({0x0F, 0x10, 0x11, 0x12})
 
 def object_id_is_shootable(object_id: int) -> bool:
     if object_id in SHOOTABLE_OBJECT_IDS:
@@ -282,7 +284,6 @@ STATE17_LANDMINE_STATE = 0x17
 STATE17_LANDMINE_PERIOD = 0x28
 STATE17_LANDMINE_IDLE_BANK = 5
 STATE17_LANDMINE_IDLE_TILES = (23, 41)
-STATE17_LANDMINE_TRIGGER_TILES = (42, 43, 44)
 STATE17_LANDMINE_DAMAGE_FRAME = 0x0B
 
 # Stationary shooter/trap actor states from the update dispatcher around

@@ -16,12 +16,19 @@ Every mechanic should have an explicit status before we build more logic on top 
 
 ## Registry
 
-The machine-readable registry is:
+The mechanic-level machine-readable registry is:
 
 ```text
-
 docs/registry/mechanics_status.json
 ```
+
+The tick-level machine-readable ledger is:
+
+```text
+docs/registry/tick_accuracy_ledger.json
+```
+
+Use `docs/TICK_ACCURACY_LEDGER.md` when a change depends on fixed tick ordering, actor/player update order, or an exact ASM branch-to-Python entrypoint mapping.
 
 Each entry records:
 
@@ -37,6 +44,7 @@ Run:
 
 ```bash
 python tools/audit_mechanics_status.py
+python tools/audit_tick_accuracy.py
 ```
 
 This validates that every entry has a known status, evidence, implementation pointers, and follow-up actions where needed.

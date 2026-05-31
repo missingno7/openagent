@@ -397,7 +397,10 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
                     direction=STATIONARY_SHOOTER_DIRECTION[cell.code],
                     step_px=0,
                     shoot_interval_ticks=shoot_interval,
-                    shoot_timer_ticks=shoot_interval,
+                    # EXE DS:34DA starts as the elapsed fire timer, not as a
+                    # countdown-to-zero.  States 0x0A/0x0B increment it every
+                    # actor tick and only reset it after a successful shot.
+                    shoot_timer_ticks=0,
                     kind="stationary_shooter",
                     behavior_state=actor_model.behavior_state,
                     object_id=actor_model.object_id,

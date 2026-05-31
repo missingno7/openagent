@@ -3,7 +3,7 @@
 
 It intentionally checks the problems that kept making the project hard to use:
 root-level debug images, stale bytecode, oversized unrelated source dumps, and
-basic Python syntax/import validity.
+basic Python source syntax validity.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def main() -> int:
         problems.append('Pass logs still in docs root: ' + ', '.join(rel(p) for p in pass_logs_in_root[:10]))
 
     syntax_errors: list[str] = []
-    for package in (ROOT / 'openagent',):
+    for package in (ROOT / 'openagent', ROOT / 'tools'):
         for py in package.rglob('*.py'):
             try:
                 ast.parse(py.read_text(encoding='utf-8'), filename=str(py))

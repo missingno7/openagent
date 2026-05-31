@@ -216,22 +216,26 @@
       ],
       "status": "asm_verified",
       "implemented_in": [
-        "openagent/runtime.py",
-        "openagent/player_lifecycle.py"
+        "openagent/animation.py",
+        "openagent/player_lifecycle.py",
+        "openagent/runtime.py"
       ],
       "evidence": [
         "docs/passes/exe_mechanisms_pass53.md",
         "docs/passes/exe_mechanisms_pass54.md",
-        "docs/passes/exe_mechanisms_pass63.md"
+        "docs/passes/exe_mechanisms_pass63.md",
+        "docs/passes/exe_mechanisms_pass113.md"
       ],
       "asm_refs": [
         "SAM1:0xD0B1",
         "DS:69F5",
-        "DS:69F6"
+        "DS:69F6",
+        "SAM1:0x7782..0x78C1",
+        "SAM1:0x77E0..0x78A4"
       ],
       "confidence": "high",
       "known_gaps": [
-        "Triggered explosion visual timing should still be compared frame-by-frame."
+        "Triggered explosion direct draw/clear timing could still be compared frame-by-frame against DOSBox, but runtime no longer spawns extra persistent explosions."
       ],
       "next_actions": [
         "Capture original mine sequence and validate idle blink period + triggered animation frames."
@@ -452,6 +456,56 @@
       ]
     },
     {
+      "id": "stationary_launchers_0x51_0x52",
+      "area": "enemy",
+      "title": "Stationary launchers raw 0x51/0x52",
+      "raw_codes": [
+        "0x51",
+        "0x52"
+      ],
+      "objects": [
+        "0x01D1",
+        "0x01D0",
+        "projectile 0x01D6"
+      ],
+      "states": [
+        "0x0B",
+        "0x0A"
+      ],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/entities.py",
+        "openagent/runtime.py",
+        "openagent/combat.py",
+        "openagent/movement_collision.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass26.md",
+        "docs/passes/exe_mechanisms_pass119.md",
+        "docs/passes/exe_mechanisms_pass120.md",
+        "docs/passes/exe_mechanisms_pass121.md"
+      ],
+      "asm_refs": [
+        "SAM1:0x6B74..0x6D47 stationary launcher state branches",
+        "SAM1:0x6B88/0x6C73 elapsed timer increments",
+        "SAM1:0x6BF4/0x6CDF timer reset after successful firing gate",
+        "SAM1:0x6C0D..0x6C2D raw 0x52 helper 0x5784 spawn",
+        "SAM1:0x6CF8..0x6D18 raw 0x51 helper 0x5784 spawn"
+      ],
+      "confidence": "medium-high",
+      "known_gaps": [
+        "Firing timer, row gate, facing gate, projectile object, speed, direction and ASM helper origin are traced for states 0x0A/0x0B.",
+        "Passes 120-121 correct the previous body-policy reconstruction: raw 0x51/0x52 are non-solid and are excluded from both dynamic body contact and the generic check_enemy_touch fallback; they are hostile through emitted projectile 0x01D6.",
+        "Python stores stationary launcher Projectile.y as actor_y+7 only to compensate the horizontal-projectile render anchor; the ASM helper parameter remains actor_y.",
+        "The broader generic enemy-body contact allowlist is not fully audited; do not infer body damage for new actors without an ASM contact branch."
+      ],
+      "next_actions": [
+        "Audit the related stationary launcher pair raw 0x3C/0x3D for the same non-solid/non-contact policy and projectile render-anchor compensation.",
+        "Compare DOSBox captures for projectile sprite top alignment at row-boundary positions.",
+        "Replace the generic enemy-body contact exclusion list with an ASM-derived allowlist once the contact dispatcher is fully traced."
+      ]
+    },
+    {
       "id": "animated_decor_tiles",
       "area": "animation",
       "title": "Animated decorations and hazards",
@@ -469,29 +523,33 @@
         "0x2B",
         "0x2C"
       ],
-      "status": "heuristic",
+      "status": "asm_partial",
       "implemented_in": [
+        "openagent/animation.py",
+        "openagent/rendering.py",
         "openagent/runtime.py"
       ],
       "evidence": [
         "docs/passes/exe_mechanisms_pass43.md",
         "docs/passes/exe_mechanisms_pass53.md",
         "docs/passes/exe_mechanisms_pass54.md",
-        "docs/passes/exe_mechanisms_pass94.md"
+        "docs/passes/exe_mechanisms_pass94.md",
+        "docs/passes/exe_mechanisms_pass115.md"
       ],
       "asm_refs": [
-        "state 0x2B",
-        "state 0x2C"
+        "SAM1:0x13CC1..0x13DE4 raw 0x40/object 0x0131 actor spawn",
+        "SAM1:0xB599..0xB5FC state 0x2B animation-only update",
+        "SAM1:0xB615..0xB63F object 0x0103 state 0x2C explicit 0x53C4 contact helper",
+        "SAM1:0x2649..0x26AB object 0x12D..0x15E renderer range"
       ],
-      "confidence": "low",
+      "confidence": "medium",
       "known_gaps": [
-        "User already caught wrong frame counts for D4-like decorations.",
-        "Need a data-driven animation table instead of hardcoded frame guesses.",
-        "Raw 0x78 contact now uses the exact narrow helper 0x53C4, but frame-source details for animated decorations are still not fully audited."
+        "Object-family frame sources should be generated from renderer ranges instead of hardcoded bank/tile refs.",
+        "Raw 0x78 contact uses the narrow helper 0x53C4, but its full frame-source family still needs a focused renderer-table audit."
       ],
       "next_actions": [
-        "Audit each animated raw tile against 16x16 assets and ASM frame writes.",
-        "Create a per-object animation frame registry with status fields."
+        "Build a generated object-id-to-source-page/tile registry from the renderer ranges.",
+        "Audit each state-0x2C object separately so passive decoration and contact-hazard policy stay object-specific."
       ]
     },
     {
@@ -505,7 +563,8 @@
       "implemented_in": [
         "openagent/player_motion.py",
         "openagent/runtime.py",
-        "openagent/game_constants.py"
+        "openagent/game_constants.py",
+        "openagent/movement_collision.py"
       ],
       "evidence": [
         "docs/passes/exe_mechanisms_pass9.md",
@@ -514,7 +573,9 @@
         "docs/passes/exe_mechanisms_pass81.md",
         "docs/passes/exe_mechanisms_pass82.md",
         "docs/passes/exe_mechanisms_pass83.md",
-        "docs/passes/exe_mechanisms_pass84.md"
+        "docs/passes/exe_mechanisms_pass84.md",
+        "docs/passes/exe_mechanisms_pass116.md",
+        "docs/passes/exe_mechanisms_pass118.md"
       ],
       "asm_refs": [
         "SAM1:0x532D..0x53C0",
@@ -524,21 +585,25 @@
         "DS:681E",
         "DS:34AF",
         "DS:34EA",
-        "DS:6EC1"
+        "DS:6EC1",
+        "SAM1:0x82E3..0x8742",
+        "SAM1:0x83C4..0x848A raw 0xA7 player/barrel shrunken overlap rectangle",
+        "SAM1:0x8542..0x8742 raw 0xA7 state 0x1389 transient"
       ],
       "confidence": "medium",
       "known_gaps": [
         "Moving-platform landing now uses an atomic downward crossing interval, but the original dynamic actor/player overlap branch for raw 0x62 still needs isolation.",
         "Actor-backed solid fall overlap remains a separated reconstruction until the original actor/player overlap branches are isolated.",
-        "Pushable-barrel overlap still uses a reconstructed pixel-granular fallback because raw 0xA7 has a separate actor interaction path.",
+        "Raw 0xA7 player/barrel contact geometry now uses the ASM x+3..x+12 / y..y+15 rectangle from pass 118; the blocked-push release and 0x1389 score/sound/draw cleanup remain reconstructed.",
         "Ladder/direct vertical movement flags DS:6EC3/DS:6EC4 are not implemented.",
         "Difficulty modifiers DS:69B0/DS:69A4 beyond the normal path are not modeled."
       ],
       "next_actions": [
         "Isolate the raw-0x62 dynamic actor/player overlap branch and compare it with the crossing reconstruction.",
-        "Trace the full raw-0xA7 actor overlap path and replace its reconstructed pixel fallback.",
+        "Trace helper 0x547C and the full raw-0xA7 state 0x1389 branch to replace the blocked-push transient with exact state/timer semantics.",
         "Trace and implement ladder/direct vertical movement.",
-        "Add deterministic room probes for wall approach, ledge fall, ceiling hit, and landing."
+        "Add deterministic room probes for wall approach, ledge fall, ceiling hit, and landing.",
+        "Capture a DOSBox reference for raw 0xA7 pushed-off-ledge timing, blocked push behavior, and exact 0x1388/0x1389 state transitions."
       ]
     },
     {

@@ -1,6 +1,8 @@
 # Next Research Queue
 
-Highest-value unknowns after pass 106.
+Highest-value unknowns after pass 121.
+
+Start new accuracy work from `docs/TICK_ACCURACY_LEDGER.md`, not by scanning random pass logs. The ledger now links each tick phase to concrete ASM refs, Python entrypoints, blind spots and regression tests.
 
 ## UI / overworld / tables
 
@@ -27,27 +29,30 @@ Highest-value unknowns after pass 106.
 ## Projectiles and enemy hit behavior
 
 1. Finish the projectile object/state table: player bullet, enemy bullet, lightning, shrapnel, and non-laser object families; passes 96-97 now separate object-`0x72/state 0x25` from `0x00C7 -> 0x72/state 0x89` and confirm their shared player-origin 10x16 hit rectangle.
-2. Verify when projectile impact spark is visible and when the projectile slot is just consumed.
-3. Confirm per-enemy HP/timer fields where `DS:34DC` is overloaded as both HP-like state and countdown.
-4. Rebuild object-`0x72` map-collision foreground redraw side effects around `SAM1:0xA2AF..0xA604` / `0xA4CB..0xA604`; hit rectangle policy is now handled by pass 97.
+2. Recheck the related stationary launcher pair `0x3C/0x3D`; passes 120-121 corrected raw `0x51/0x52` to non-solid/non-contact bodies in both movement helpers and the global touch fallback while preserving the pass-119 firing cadence/origin work.
+3. Verify when projectile impact spark is visible and when the projectile slot is just consumed.
+4. Confirm per-enemy HP/timer fields where `DS:34DC` is overloaded as both HP-like state and countdown.
+5. Rebuild object-`0x72` map-collision foreground redraw side effects around `SAM1:0xA2AF..0xA604` / `0xA4CB..0xA604`; hit rectangle policy is now handled by pass 97.
 
 ## Remaining gameplay mechanics
 
 1. Exact overworld entrance dispatch/progression flags beyond the runtime-local checked-house redraw.
 2. Door/key variants beyond the dynamite exit.
 3. Moving platforms and hidden platforms against exact runtime collision writes.
-4. Animated decorative tiles that still use heuristic frame ranges.
+4. Raw `0xA7` remaining actor-state details beyond pass 121: the player/barrel overlap rectangle and no-horizontal-side-pop release are guarded, but exact `0x1388 -> 0x1389` timing/animation, pushed-off-edge fall timing, score/sound side effects, helper `0x547C`, and DOSBox reference capture for blocked pushes/multiple dynamic actors remain open.
+5. Animated decorative tiles that still use heuristic frame ranges.
 
 ## Build hygiene
 
 1. Keep temporary PNGs out of the root.
-2. Run `python -m compileall -q openagent tools`, remove generated `__pycache__/`, then run `tools/audit_project.py` before every handoff.
-3. Avoid adding more logic to `runtime.py` unless it is a small integration call into a focused module.
+2. Run `python tools/check_handoff.py` before every handoff. It runs smoke tests, including the hard-death runtime visual lookup regression from pass 112 and the tick-accuracy ledger audit, and removes `__pycache__`/`.pyc` files before packaging.
+3. Avoid adding more logic to `runtime.py` unless it is a small integration call into a focused module. Render-only work belongs in `openagent/rendering.py`; movement/collision work belongs in `openagent/movement_collision.py`; teleporter-only work belongs in `openagent/teleport.py`; Tk/input/navigation work belongs in `openagent/window.py`.
+4. Do not reintroduce separate mission player/entity accumulator loops; keep fixed-tick ordering centralized in `update_mission_simulation()`.
 
-## Cleanup queue after pass 73
+## Cleanup queue after pass 112
 
 1. Extract map pickup/interaction dispatcher into a dedicated module.
-2. Split draw/render entity helpers out of `runtime.py`; keep `docs/PERFORMANCE_NOTES.md` updated when touching zoom/render hot paths.
+2. Split inventory/key/door pickup handling away from broad interaction dispatch.
 3. Turn enemy state branches into named state helpers with ASM references.
 4. Continue moving projectile ASM refinements into `openagent/combat.py`.
 
@@ -65,7 +70,7 @@ Highest priority suspects:
 - `animated_decor_tiles`
 - `enemy_0x63_ceiling_laser` — core state path consolidated in passes 94-96; remaining work is ceiling-track probe and state-0x89 impact/map-redraw reference test.
 - `player_death_lifecycle`
-- `projectile_policy` — hit rectangle split improved in pass 97; remaining work is object/state table + impact/redraw side effects.
+- `projectile_policy` — hit rectangle split improved in pass 97 and raw `0x51/0x52` cadence/body policy improved in passes 119-121; remaining work is object/state table, broader generic body-contact allowlist, and impact/redraw side effects.
 - `overworld_logic`
 
 
@@ -76,3 +81,7 @@ Level 0 now has its own module (`openagent/overworld.py`) and research note
 heuristic with the original top-down `+0x1CC` body-byte helper.  The next useful
 ASM tasks are now entrance marker handling, completion flags, original popup
 windows, a DOSBox movement reference capture for any remaining troublesome coordinates, and exact entrance/menu behavior.
+
+## Render timing follow-up
+
+- Playtest both `linear` and `smooth` interpolation modes on moving platforms, elevators, teleporter exits, hard-death/platform catch, and level-0 camera scrolling. Keep any further changes render-only unless there is ASM evidence for gameplay timing.

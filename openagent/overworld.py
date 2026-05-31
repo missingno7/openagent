@@ -33,7 +33,7 @@ from .animation import (
     PLAYER_WALK_COUNTER_STEP,
 )
 from .collision import PLAYER_COLLISION_BOTTOM, PLAYER_COLLISION_LEFT, PLAYER_COLLISION_RIGHT
-from .game_constants import DOS_TICK_HZ, PLAYER_H, PLAYER_W
+from .game_constants import DOS_TICK_HZ
 from .level_model import iter_map_cells
 from .player_motion import horizontal_step_for_hold_ticks
 from .semantics import WORLD_ENTRANCE_CODES, WORLD_PLAYER_CODE
@@ -267,7 +267,7 @@ class OverworldMixin:
         while self._logic_accum >= 1.0 / DOS_TICK_HZ:
             self._logic_accum -= 1.0 / DOS_TICK_HZ
             self.snapshot_player_render_position()
-            self._prev_world_camera = (float(self.world_camera_x), float(self.world_camera_y))
+            self.snapshot_world_camera_render_position()
             self.update_world_player_tick()
 
     def update_world_player_animation_state(self, *, left: bool, right: bool, up: bool, down: bool) -> None:

@@ -293,10 +293,15 @@ class CombatMixin:
         if enemy.kind == "stationary_shooter":
             # EXE states 0x0A/0x0B use projectile object 0x01D6, while
             # 0x0C/0x0D use 0x01E8/0x01EC.  Those resolve to the decoded
-            # bank-4 sprites below.  The helper call passes speed=4.
+            # bank-4 sprites below.  SAM1:0x6C0D..0x6C2D and
+            # 0x6CF8..0x6D18 pass actor_y directly to helper 0x5784; only
+            # the X origin is offset by +/-8 for raw 0x52/0x51.  In this
+            # Python runtime, ordinary horizontal projectile sprites render at
+            # ``projectile.y - 7``; store +7 here so the displayed sprite top
+            # lands on the EXE helper's actor_y instead of appearing 7px high.
             bank, tile_right, tile_left = STATIONARY_SHOOTER_PROJECTILE.get(enemy.code, (1, 38, 39))
             start_x = enemy.x + STATIONARY_SHOOTER_SPAWN_X_OFFSET.get(enemy.code, TILE - 2 if enemy.direction > 0 else -2)
-            start_y = enemy.y + 8
+            start_y = enemy.y + 7
             self.entities.projectiles.append(
                 Projectile(start_x, start_y, enemy.direction, speed=4 * DOS_TICK_HZ, hostile=True, bank=bank, tile_right=tile_right, tile_left=tile_left, owner="enemy")
             )
@@ -373,12 +378,17 @@ class CombatMixin:
         return object_id_is_shootable(enemy.object_id)
 
     def actor_is_indestructible_solid(self, enemy: Enemy) -> bool:
-        # Stationary rocket/shooter traps are actor slots for firing/timing, but
-        # not entries in the EXE damage branch.  Treat them as solid map objects:
-        # bullets impact and explode, but the actor is not removed or damaged.
-        # Other unimplemented actor states may be harmful or non-shootable, but
-        # they should not automatically become wall blocks.
-        return enemy.kind in {"stationary_shooter", "fire_walker"}
+        # Do not infer solidity from "not shootable".  Raw 0x51/0x52 launcher
+        # bodies (object ids 0x01D1/0x01D0) are timer/firing actor states, but
+        # the decoded hit/contact branches do not route them through the body
+        # block path.  Keep only explicitly reconstructed solid hazards here.
+        return enemy.kind == "fire_walker"
+
+    def actor_is_contact_hazard(self, enemy: Enemy) -> bool:
+        # Contact damage is a separate decoded branch from firing cadence.  Raw
+        # 0x51/0x52 are hostile only through their projectiles; their actor body
+        # must not hurt the player.
+        return enemy.kind == "fire_walker"
 
     def update_projectiles_tick(self) -> None:
         kept: list[Projectile] = []

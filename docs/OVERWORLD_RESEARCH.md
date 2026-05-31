@@ -83,7 +83,7 @@ logic:
 ## Accuracy policy
 
 Everything in `openagent/overworld.py` should be read as either `data_verified`
-(raw bytes and counts), `asm_partial` (movement/collision/camera/draw/entry after pass 102), or
+(raw bytes and counts), `asm_partial` (movement/collision/camera/draw/entry/re-entry after passes 98-102), or
 `heuristic` (exact entrance-to-level mapping, persistent completion flags, popups).
 
 ## Pass 78 reproducible data audit
@@ -188,6 +188,9 @@ Completed/checkmarked houses remain active entrances.  The release gate after
 returning from a mission now uses the player origin inside the building
 footprint; once the origin leaves and later re-enters, the level can be opened
 again.
+
+Pass 107 did not change overworld behavior; it only refreshed this document and
+removed unrelated dead mission-loop wrappers from `runtime.py`.
 
 Still open: exact entrance-to-level mapping, original popup/table UI, and
 persistent save/progression flags.

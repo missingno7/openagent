@@ -1,65 +1,75 @@
 # Pass Log Index
 
-Chronological pass notes were moved from the `docs/` root to `docs/passes/` so the root documentation stays readable.
+Chronological pass notes live under `docs/passes/`. They are audit history, not the main onboarding path.
 
-Use the pass logs as audit history. For day-to-day orientation, start with:
+Start here for day-to-day work:
 
-- `docs/PROJECT_MAP.md`
-- `docs/MECHANICS_INDEX.md`
-- `docs/NEXT_RESEARCH_QUEUE.md`
-- `docs/exe_mechanisms_summary.md`
+- `docs/PROJECT_MAP.md` — current code ownership and safe refactor targets.
+- `docs/MECHANICS_INDEX.md` — concise implemented-mechanics status.
+- `docs/ASM_EVIDENCE_INDEX.md` — where the important ASM evidence is documented.
+- `docs/TICK_ACCURACY_LEDGER.md` — ASM refs -> Python tick entrypoints -> blind spots -> tests.
+- `docs/NEXT_RESEARCH_QUEUE.md` — highest-value remaining unknowns.
+- `docs/PERFORMANCE_NOTES.md` — render/timing hot-path rules.
 
-The pass files are still kept verbatim under `docs/passes/`.
+## Cleanup / structure milestones
 
-## Cleanup passes
+| Pass | Summary |
+|---:|---|
+| 72 | Extracted HUD/UI rendering and the player dataclass out of `runtime.py`. |
+| 73 | Moved shared constants to `openagent/game_constants.py` and player lifecycle to `openagent/player_lifecycle.py`. |
+| 74 | Moved projectile/combat/hit-policy helpers to `openagent/combat.py`. |
+| 76 | Added mechanics accuracy registry, ASM evidence index, and registry audit tool. |
+| 77 | Moved prototype level-0 island-map logic to `openagent/overworld.py`. |
+| 107 | Removed obsolete mission fixed-step wrappers, added bytecode-free `tools/check_handoff.py`, and refreshed docs. |
+| 108 | Moved render-only interpolation/camera/draw helpers to `openagent/rendering.py` and trimmed runtime imports. |
+| 109 | Moved level-image cache rendering, Tk/window controls, and teleporter state into focused mixins. |
+| 111 | Moved low-level movement/collision/barrel/platform helpers into `openagent/movement_collision.py`. |
+| 112 | Restored the hard-death runtime visual lookup import and added a handoff smoke test for it. |
+| 113 | Removed the leftover persistent three-explosion fan-out from triggered raw `0x4D` mines and added a regression test. |
+| 114 | Refactored render interpolation into a shared presentation smoother for player, actors and camera. |
+| 115 | Re-audited raw `0x40` / object `0x0131` / state `0x2B`: it is decorative/non-contact and its lower cel is bank9:1. |
+| 116 | Corrected raw `0xA7` barrel gravity so falling remains vertical and side body cells cannot stop the downward step. |
+| 117 | Added the tick-accuracy ledger, annotated ASM excerpts, and a handoff audit tying ASM refs to Python tick entrypoints and blind spots. |
+| 118 | Re-audited raw `0xA7` player/barrel contact: implemented the ASM `x+3..x+12`, `y..y+15` rectangle and added a regression test. |
+| 119 | Re-audited raw `0x51/0x52` stationary launchers: fixed elapsed firing cadence and helper projectile origin, but pass 120 later corrects the body-policy conclusion. |
+| 120 | Corrected raw `0x51/0x52` to non-solid/non-contact bodies, compensated projectile render Y, and removed the unsupported raw-`0xA7` blocked-release horizontal side-pop. |
+| 121 | Fixed the remaining global `check_enemy_touch()` fallback so stationary launchers cannot hurt by touch, and documented raw-`0xA7` release/fall as still partial instead of overclaiming it. |
 
-- `docs/passes/exe_mechanisms_pass72.md` — extracted HUD/UI rendering and player dataclass out of `runtime.py`; no gameplay changes.
-- **Pass 73** – cleanup-only refactor: moved shared runtime constants into `openagent/game_constants.py` and player hurt/death/respawn lifecycle into `openagent/player_lifecycle.py`.
-- **Pass 74** – cleanup-only refactor: moved projectile/combat/hit-policy helpers into `openagent/combat.py`.
+## Recent ASM / gameplay passes
 
-## Pass 76
+| Pass | Summary |
+|---:|---|
+| 92 | Implemented `DS:69F5/69F6` hard-death signed table arc and mission reset after countdown. |
+| 93 | Re-audited mission HUD/status routine; fixed ammo icon, speed/dynamite/key/floppy/lives slots. |
+| 94 | Re-audited raw `0x63` ceiling laser; fixed player-origin firing gate, spawn point, and shared narrow contact helper. |
+| 95 | Rechecked projectile helper `0x5784`; `0x00C7` maps to object `0x72/state 0x89`; pass 96 corrects policy. |
+| 96 | Split object-`0x72` projectile states: state `0x89` narrow generic hurt, state `0x25` direct hard death. |
+| 97 | Corrected object-`0x72` laser hit test to player-origin 10x16 rectangle, not full decoded sprite. |
+| 98 | Re-audited level-0 movement/collision helper; switched overworld collision to runtime `+0x1CC` body-byte probes. |
+| 99 | Added dedicated level-0 world collision table from `CS:0x2E20`. |
+| 100 | Reconstructed level-0 movement order and `DS:6838/683A` world camera thresholds/clamps. |
+| 101 | Aligned level-0 player draw origin, walking animation, automatic house entry, and checked-house redraw. |
+| 102 | Fixed world start marker duplication, checked-house replay gating, and full hard-death level reset. |
+| 103 | First interpolation smoothing pass; later superseded by pass 104 for platform jitter. |
+| 104 | Simplified interpolation to linear fixed-step alpha and fixed carried-player/platform snapshot phase. |
+| 110 | Added optional render smoothing mode while keeping linear interpolation as the accuracy baseline; pass 114 replaces the first curve. |
+| 105 | Froze mission camera during hard-death and clamped death fall to `DS:683A+0xB8`; pass 106 supersedes platform detail. |
+| 106 | Restored ASM-accurate death/platform ordering: moving platforms can catch/carry the death animation. |
+| 113 | Rechecked raw `0x4D` triggered mine state `0x17`; ASM directly draws/clears the surrounding blast and does not spawn extra persistent explosion actors. |
+| 115 | Rechecked raw `0x40` state `0x2B`: no `0x53C4` contact helper, lower cel bank9:1, and broad generic contact disabled. |
+| 116 | Rechecked the raw `0xA7` barrel fall approximation: gravity now uses only vertical landing probes and no longer reuses broad horizontal/body collision, so pushed-off barrels fall straight down past side solids. |
+| 117 | Added a tick-accuracy ledger and annotated ASM excerpts so future changes start from ASM refs, Python entrypoints, blind spots and tests instead of scattered notes. |
+| 118 | Re-audited raw `0xA7` player/barrel interaction: broad full-sprite overlap was replaced by the ASM shrunken contact rectangle, while `0x1389` state side effects remain tracked as partial. |
+| 119 | Re-audited raw `0x51/0x52` stationary launchers: `DS:34DA` is elapsed time, not a line-of-sight countdown; fixed immediate charged firing and helper `actor_y` projectile origin. |
+| 120 | Corrected pass 119 body policy: raw `0x51/0x52` are not solid/contact hazards; Python compensates projectile render Y while preserving ASM helper `actor_y`.  Also removed the reconstructed barrel release side-nudge. |
+| 121 | Closed the second `0x51/0x52` contact-damage path in `check_enemy_touch()`: the generic body fallback now excludes stationary launchers, while barrel pushed-off-edge / release state remains explicitly tracked as an unresolved `0x1389` accuracy gap. |
 
-- Added the mechanics accuracy/status registry.
-- Added `docs/ACCURACY_STATUS.md`, `docs/ASM_EVIDENCE_INDEX.md`, and `docs/registry/mechanics_status.json`.
-- Added `tools/audit_mechanics_status.py` to prevent future handoffs from hiding heuristic/unknown behavior.
+## Full archive
 
+The complete historical archive is still available as individual markdown files under `docs/passes/`, including older extraction/data passes and superseded interpretations. When a newer pass corrects an older one, prefer the newer pass and the current status in `docs/registry/mechanics_status.json`.
 
-## Pass 77
+Before packaging a handoff build, run:
 
-- Moved prototype level-0 island-map logic into `openagent/overworld.py`.
-- Added `docs/OVERWORLD_RESEARCH.md` with data facts vs heuristics.
-- Updated the mechanics registry so overworld behavior is no longer simply hidden as `unimplemented`.
-
-- Pass 78: Overworld research guardrails; added reproducible level-0 raw-data audit tool and `docs/registry/overworld_level0_inventory.json`.
-| 86 | Re-audited normal mission movement against `SAM1:0x532D`, `0xB8B3`, and `0xBC0E..0xBD8A`; fixed the accidental always-on speed-bonus horizontal terminal speed, implemented raw `0x4E` speed bonus timing/HUD icon, and documented why diagonal falling can visually look like ~6 px/tick even though the ASM uses integer 4/8 px terminal steps. |
-
-| 87 | Fixed visible rendering for mine/water animation: `0x4D` now uses `state17_landmine_tile()` in `draw_entities()`, and `0x60` is skipped from cached layers so the live `0x01F3` overlay is not hidden by static foreground. |
-- Pass 88: Re-audited raw `0x77` teleporter alignment/rearm and live bank10 idle/warp animation.
-
-- Pass 89: Re-audited raw `0x58` / object `0x0331` / state `0x1F`; fixed bank12 composite top/bottom frame ranges and added its walk/stop/open `DA/DC/DE` timer cycle.
-
-- Pass 90: Rechecked raw `0x77` teleporter cooldown/nudge and normal jump-start headroom gate; fixed destination re-exit ping-pong and blocked jumps into a solid tile above.
-
-- Pass 91: Rechecked damage-gated bank-12 enemies and several missed actor visuals: 0x58 closed-top/vulnerable-open hit policy, 0x6D fire walker, 0x23 satellite score target, 0x40 upper-only animation, and 0x4D triggered-mine explosion draw.
-- Pass 92: Rechecked `DS:69F5/DS:69F6` hard-death lifecycle; implemented the signed table-driven upward-then-downward death arc, kept world/actor updates running during death, and reset the mission state after the countdown.
-- Pass 93: Re-audited the mission HUD/status routine (`SAM1:0x181F1..0x1849E`); added the two-cell ammo icon, fixed speed/dynamite/key/floppy slots, removed the fake glasses HUD icon, and moved lives to the ASM slot loop.
-- Pass 94: Re-audited raw `0x63` / state `0x21`; fixed the player-origin firing gate, moved the ceiling laser spawn to `actor_y+8`, and added the exact narrow `0x53C4` contact helper for known 0x53C4 hazards.
-- Pass 95: Re-audited the projectile helper path for raw `0x63`: object `0x00C7` is rewritten to object `0x72/state 0x89`. Pass 96 corrects the damage-policy interpretation.
-
-- Pass 96: Re-opened object-`0x72` projectile states; corrected state `0x89` to narrow generic `0x53C4` hurt, moved direct hard-death policy to object `0x72/state 0x25`, and made object-`0x72` solid impacts invisible instead of drawing the generic wall spark.
-- Pass 97: Rechecked object-`0x72` laser overlap against `SAM1:0xA660..0xA6F0`; narrow laser states now compare against the player's 10x16 origin rectangle instead of the full decoded sprite footprint.
-- Pass 98: Re-audited level-0 overworld movement at `SAM1:0xBAF5..0xBC0A` and collision helper `SAM1:0xB7D9..0xB8B0`; replaced visual `WORLD_BLOCKED_CODES` with the runtime `+0x1CC` body-byte test, the 10x16 player-origin rectangle, and fixed 4 px/tick vertical movement.
-
-- Pass 99: Re-opened the level-0 map-token parser at `SAM1:0x10811` / `CS:0x2E20`; added a dedicated world collision table so raw `0x55` and `0x61` block on the overworld while mission levels keep using the mission parser table.
-
-- Pass 100: Re-audited level-0 overworld movement/camera at `SAM1:0xBAF5..0xBC0A` and `SAM1:0x2059..0x209F`; movement now checks attempted offsets before writing position, preserves right/left/down/up processing order, removes sprite-bound pre-clamping, and uses reconstructed `DS:6838/683A` world scroll registers instead of the generic centered camera.
-
-- Pass 101: Re-audited level-0 player draw/entry behavior; aligned world sprite origin with DS:34EE/34F0, enabled DS:3500/34F6 walking/turning animation, added automatic 0x4D/0x4E/0x4F/0x50 house entry, and redraws completed houses with bank-1 checked cels 16..19.
-- Pass 102: Fixed level-0 raw 0x59 start marker being drawn under the live player, changed completed-house replay gating to use player-origin entry/release, and made hard-death restart use the full mission reset state instead of restoring the decremented lives value.
-
-- Pass 103: Fixed render interpolation hitching by snapshotting before every fixed tick, avoiding player-snapshot collapse on actor-only ticks, adding a small clamped presentation lookahead, using nearest-pixel snapping, interpolating the level-0 world camera/player render state, and correcting the main-loop `dt` clamp/pacing so late high-zoom frames can catch up by at least one DOS tick.
-
-- Pass 104: Simplified render interpolation back to plain linear accumulator/tick alpha, interleaved mission actor/player fixed ticks through one simulation loop, and fixed moving-platform jitter by snapshotting the carried player and platform before the same DOS tick.
-
-- Pass 105: Re-audited the DS:69F5/69F6 death branch; death now freezes the mission camera and clamps the falling player to DS:683A+0xB8. Pass 106 supersedes its platform-carry interpretation.
-- Pass 106: Re-audited death/platform ordering; the DS:69F5 branch runs before actor updates, and the moving-platform actor branch has no DS:69F5 guard, so platforms can catch and carry the death animation with the narrow actor_x..+9 / player_x..+9, player_y+0x10 contact test.
+```bash
+python tools/check_handoff.py
+```
