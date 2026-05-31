@@ -176,6 +176,7 @@ def check_right_rocket_launcher_uses_state0e_spawn_and_passes_through_player() -
     assert shot.y == enemy.y + 7
     assert shot.direction == 1
     assert shot.bank == 4 and shot.tile_right == 37 and shot.tile_left == 41
+    assert shot.anim_tiles == (37, 38, 39)
     assert shot.keep_on_player_hit
     assert shot.narrow_hurt_on_hit
     assert shot.hit_y_offset == -7
@@ -205,6 +206,7 @@ def check_left_rocket_launcher_uses_negative_offset_and_passes_through_player() 
     assert shot.y == enemy.y + 7
     assert shot.direction == -1
     assert shot.bank == 4 and shot.tile_right == 37 and shot.tile_left == 41
+    assert shot.anim_tiles == (41, 42, 43)
 
     old_x = shot.x
     probe.player.x = shot.x - 4

@@ -436,7 +436,8 @@
         "docs/passes/exe_mechanisms_pass95.md",
         "docs/passes/exe_mechanisms_pass96.md",
         "docs/passes/exe_mechanisms_pass97.md",
-        "docs/passes/exe_mechanisms_pass129.md"
+        "docs/passes/exe_mechanisms_pass129.md",
+        "docs/passes/exe_mechanisms_pass132.md"
       ],
       "asm_refs": [
         "SAM1:0x4EDD..0x4F94",
@@ -457,6 +458,7 @@
         "Impact spark vs silent consumption is only partially separated.",
         "Projectile object/state mapping is now traced for stationary 0x01D6 shots and 0x01E8/0x01EC rockets, but the complete projectile table is still incomplete.",
         "State 0x07 and state 0x0E player contact now model helper 0x53C4 as hurt-without-consume; exact helper 0x547C impact side effects are still broad.",
+        "Rocket projectile animation uses decoded bank4 frames 37..39 for right and 41..43 for left.",
         "Object-0x72 state 0x25 and 0x89 damage outcomes and player-origin hit rectangle are now separated; exact foreground redraw side effects are still approximated."
       ],
       "next_actions": [
@@ -505,7 +507,8 @@
         "docs/passes/exe_mechanisms_pass119.md",
         "docs/passes/exe_mechanisms_pass120.md",
         "docs/passes/exe_mechanisms_pass121.md",
-        "docs/passes/exe_mechanisms_pass129.md"
+        "docs/passes/exe_mechanisms_pass129.md",
+        "docs/passes/exe_mechanisms_pass132.md"
       ],
       "asm_refs": [
         "SAM1:0x6B74..0x6D47 stationary launcher state branches",
@@ -526,6 +529,7 @@
         "Passes 120-121 correct the previous body-policy reconstruction: stationary launchers are non-solid and are excluded from both dynamic body contact and the generic check_enemy_touch fallback; they are hostile through emitted projectiles, not body contact.",
         "Pass 129 confirms projectile player contact for 0x01D6/0x01E8/0x01EC routes through 0x53C4 and should hurt without consuming the projectile; 0x547C owns impact consumption.",
         "Python stores stationary horizontal Projectile.y as actor_y+7 only to compensate the horizontal-projectile render anchor; hit_y_offset=-7 keeps the ASM hurt rectangle at actor_y.",
+        "Pass 132 adds decoded rocket animation: raw 0x3C/0x3D rockets use bank4 tiles 37..39 when moving right and 41..43 when moving left.",
         "Exact body-contact dispatcher absence for 0x3C/0x3D launcher bodies should still be verified independently from the projectile path.",
         "The broader generic enemy-body contact allowlist is not fully audited; do not infer body damage for new actors without an ASM contact branch."
       ],
@@ -615,7 +619,8 @@
         "docs/passes/exe_mechanisms_pass127.md",
         "docs/passes/exe_mechanisms_pass128.md",
         "docs/passes/exe_mechanisms_pass130.md",
-        "docs/passes/exe_mechanisms_pass131.md"
+        "docs/passes/exe_mechanisms_pass131.md",
+        "docs/passes/exe_mechanisms_pass133.md"
       ],
       "asm_refs": [
         "SAM1:0x532D..0x53C0",
@@ -637,7 +642,9 @@
         "PushableBarrel.falling_locked guarded reconstruction for unsupported raw 0xA7 fall",
         "SAM1:0xB7D9..0xB8A4 horizontal destination rectangle",
         "SAM1:0xBC0E..0xBD80 vertical fall/jump phase before same-tick horizontal acceptance reconstruction",
-        "SAM1:0x28ED6..0x28F35 DS:34AF table initialization/indexing"
+        "SAM1:0x28ED6..0x28F35 DS:34AF table initialization/indexing",
+        "SAM1:0x7FA6..0x8105 raw 0x62 moving-platform carry branch",
+        "SAM1:0x801F DS:6EC1 normal-jump guard inside platform carry"
       ],
       "confidence": "medium",
       "known_gaps": [
@@ -648,7 +655,8 @@
         "Actor-backed solid fall overlap remains a separated reconstruction until the original actor/player overlap branches are isolated.",
         "Raw 0xA7 helper 0x547C projectile-hit path and individual 0x1389 redraw cleanup calls are traced only enough to separate them from player body contact; they are not fully implemented.",
         "Ladder/direct vertical movement flags DS:6EC3/DS:6EC4 are not implemented.",
-        "Difficulty modifiers DS:69B0/DS:69A4 beyond the normal path are not modeled."
+        "Difficulty modifiers DS:69B0/DS:69A4 beyond the normal path are not modeled.",
+        "Raw 0x62 platform carry now honors the ASM DS:6EC1 jump guard: active normal jump skips player snap/carry while the platform actor still moves, but the broader actor/player branch remains only partially isolated."
       ],
       "next_actions": [
         "Trace the player-control wrapper around BC0E/BAF5 and compare one-tile opening entry against DOSBox pixel captures.",
@@ -658,13 +666,15 @@
         "Trace the exact raw 0xA7 pushed-off-edge 0x1388 store/timing and compare the pass-127 4px actor-step plus pass-128 falling-lock behavior against DOSBox pixel captures.",
         "Trace and implement ladder/direct vertical movement.",
         "Add deterministic room probes for wall approach, ledge fall, ceiling hit, and landing.",
-        "Compare pass-131 corrected jump/fall modulo-16 alignment against DOSBox captures at one-tile openings and ceiling grazes."
+        "Compare pass-131 corrected jump/fall modulo-16 alignment against DOSBox captures at one-tile openings and ceiling grazes.",
+        "Trace the complete raw 0x62 platform actor branch around 0x7FA6..0x8165, including DS:6EC1/DS:6EC2 side effects and camera carry, against DOSBox captures for jump-off-platform cases."
       ],
       "notes": [
         "Pass 123 corrects pass 122: wall-blocked raw 0xA7 pushes are not the object-0xAA/state-0x1389 score rewrite. Pass 124 tried to wait for crossed-through + front-wall probes, but pass 125 corrects the timing: raw 0xA7/state 0x1388 remains body-pass-through/top-solid until the player leading shrunken x+3..x+12 edge crosses the barrel leading shrunken edge, then it restores just outside the same shrunken interval (~10px), before full-sprite wall contact. Pass 126 fixes the live polling bug where pass-through barrels were skipped by the atomic horizontal path and therefore never restored. The exact wall-push caller/store and DOSBox pixel timing are still open. Pass 127 removes the unsupported reuse of the player DS:34AF gravity table for barrel fall and makes ordinary barrel push/fall use a named 4px actor-step reconstruction; exact pushed-off-edge state/store timing remains open.",
         "Pass 128 adds an explicit falling lock so a pushed-off-edge raw 0xA7 cannot be side-pushed farther while unsupported; this is a guarded reconstruction from the actor X/Y direction separation at SAM1:0x81C8..0x8288 plus DOS observation, with the exact unsupported-transition store still open.",
         "Pass 130 fixes a one-tile doorway regression: horizontal-first probing rejected a jump/fall entry while Y was one pixel misaligned; the runtime now lets the BC0E vertical step/snap run before the B7D9 horizontal destination probe, and tools/check_player_motion_accuracy.py protects that case.",
-        "Pass 131 corrects an off-by-one in the vertical step table: ASM initializes 0x34B0=0 and indexes it as byte[0x34AF+DS:34EA], so the first jump tick has 0px movement and the early fall after the apex is 1,1,2,2,2px, restoring the tile-aligned doorway frame."
+        "Pass 131 corrects an off-by-one in the vertical step table: ASM initializes 0x34B0=0 and indexes it as byte[0x34AF+DS:34EA], so the first jump tick has 0px movement and the early fall after the apex is 1,1,2,2,2px, restoring the tile-aligned doorway frame.",
+        "Pass 133 fixes a platform/jump levitation regression: the platform carry branch at SAM1:0x801F explicitly skips player snap/carry while DS:6EC1 is non-zero. Python now maps that to Player.jump_anim_timer, so jumping from a moving platform no longer resets fall_ticks every actor tick while the platform itself still moves."
       ]
     },
     {
@@ -719,6 +729,51 @@
         "Trace original popup/table window drawing for level selection.",
         "Compare pass-102 world movement/collision/draw/entry against DOSBox captures at any remaining problematic coordinates.",
         "Run tools/check_overworld_collision.py after changing level-0 movement, entry, or completion visuals."
+      ]
+    },
+    {
+      "id": "enemy_0x75_state23_contact_bomb",
+      "area": "enemy",
+      "title": "Raw 0x75 state 0x23 speed-0 contact/hit actor",
+      "raw_codes": [
+        "0x75"
+      ],
+      "objects": [
+        "0x006D",
+        "0x00AA follow-up",
+        "0x7D/0x7E shrapnel approximation"
+      ],
+      "states": [
+        "0x23",
+        "0x1389 follow-up"
+      ],
+      "status": "asm_partial",
+      "implemented_in": [
+        "openagent/exe_actor_mechanics.py",
+        "openagent/runtime.py",
+        "openagent/combat.py",
+        "openagent/animation.py",
+        "openagent/rendering.py"
+      ],
+      "evidence": [
+        "docs/passes/exe_mechanisms_pass132.md"
+      ],
+      "asm_refs": [
+        "SAM1:0x127C6..0x1288C raw 0x75 actor init",
+        "SAM1:0x9FED..0xA15E state 0x23 update",
+        "SAM1:0x53C4 player contact hurt helper",
+        "SAM1:0x547C projectile/actor impact helper"
+      ],
+      "confidence": "medium-high",
+      "known_gaps": [
+        "State 0x23 init/update/contact/hit counter are ASM-backed, but the later object 0x00AA/state 0x1389 draw/clear follow-up is still approximated by the existing explosion/shrapnel helper.",
+        "The broad helper 0x547C side effects remain incomplete outside this actor-specific hit countdown.",
+        "A full enemy contact allowlist should eventually replace piecemeal contact branches."
+      ],
+      "next_actions": [
+        "Trace the object 0x00AA/state 0x1389 follow-up draw/clear sequence after raw 0x75 expires.",
+        "Trace helper 0x547C enough to share exact projectile/actor-hit side effects across all relevant actors.",
+        "Compare raw 0x75 animation and contact timing against DOSBox capture."
       ]
     }
   ]

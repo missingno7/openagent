@@ -13,7 +13,6 @@ from .exe_actor_mechanics import (
     spike_initial_timer,
     SPIKE_PERIOD_TICKS,
     STATIONARY_SHOOTER_DIRECTION,
-    STATIONARY_SHOOTER_PROJECTILE,
     object_id_is_shootable,
     ACTOR_HP_BY_OBJECT_ID,
     BEAM_HORIZONTAL_CODE,
@@ -416,7 +415,6 @@ def extract_level_entities(info: LevelInfo) -> LevelEntities:
             actor_model = SPECIAL_ACTOR_MODELS[cell.code]
             shoot_range = (actor_model.timer_min or 55, actor_model.timer_max or 74)
             shoot_interval = deterministic_range(cell.code, cell.x, cell.y, shoot_range[0], shoot_range[1], salt=3)
-            bank, tile_r, tile_l = STATIONARY_SHOOTER_PROJECTILE[cell.code]
             enemies.append(
                 Enemy(
                     float(cell.x * TILE),

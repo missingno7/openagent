@@ -38,7 +38,7 @@ Use these consistently in annotated ASM excerpts and runtime comments:
 |---|---|---|---|---|
 | Mission fixed tick order | `asm_partial` | `openagent/runtime.py::update_mission_simulation` | `SAM1:0x1A21..0x1B5D`, `SAM1:0x1A61..0x1AE8` | Full post-`0x1B5D` phase table; restart helper `0x520:0x011A`; broad interaction dispatch order. |
 | Hard-death arc | `asm_partial` | `openagent/runtime.py::update_player_death_tick`, `openagent/player_lifecycle.py::advance_death_bounce_tick` | `SAM1:0x1A61..0x1AE8`, `DS:69F5`, `DS:69F6`, `DS:683A` | Exact death draw timing; lives-zero/game-over branch; persistence through restart. |
-| Normal player motion | `asm_partial` | `openagent/runtime.py::update_player_tick`, `openagent/player_motion.py` table helpers, `openagent/movement_collision.py` motion helpers | `SAM1:0x28ED6..0x28F35`, `SAM1:0xB7D9..0xB8A4`, `SAM1:0xB8B3..0xBA49`, `SAM1:0xBC0E..0xBD8A` | Pass 130 applies BC0E vertical fall/jump before same-tick horizontal B7D9 probing for one-tile openings; pass 131 corrects the unshifted DS:34AF table so counter 1 is 0px and falling can hit modulo-16 doorway alignment; exact outer wrapper order, raw `0x62` actor overlap, actor-backed solid fall overlap, ladders/direct vertical movement and difficulty modifiers remain open. |
+| Normal player motion | `asm_partial` | `openagent/runtime.py::update_player_tick`, `openagent/player_motion.py` table helpers, `openagent/movement_collision.py` motion helpers | `SAM1:0x28ED6..0x28F35`, `SAM1:0xB7D9..0xB8A4`, `SAM1:0xB8B3..0xBA49`, `SAM1:0xBC0E..0xBD8A` | Pass 130 applies BC0E vertical fall/jump before same-tick horizontal B7D9 probing for one-tile openings; pass 131 corrects the unshifted DS:34AF table so counter 1 is 0px and falling can hit modulo-16 doorway alignment; pass 133 fixes raw `0x62` platform carry so `DS:6EC1`/normal jump skips player snap/carry while the actor still moves; exact outer wrapper order, remaining raw `0x62` side effects/camera timing, actor-backed solid fall overlap, ladders/direct vertical movement and difficulty modifiers remain open. |
 | Raw `0xA7` pushable barrel | `asm_partial` | `openagent/movement_collision.py::player_barrel_actor_overlap`, `try_push_barrel`, `move_barrel_vertical`, `release_barrel_against_wall` | `SAM1:0x82E3..0x8742`, `0x81C8..0x8288`, `0x83C4..0x848A`, `0x8542..0x8742` | `x+3..x+12` player/barrel rectangle implemented. Pass 123 corrects pass 122: wall-blocked pushes are **not** the destructive `0x00AA/state 0x1389` score branch; wall release now keeps raw `0xA7/state 0x1388`. Pass 126 fixes the live polling path after body pass-through. Pass 127 removes the unsupported player-gravity coupling: ordinary barrel push and unsupported fall now use a named 4px actor-step reconstruction from actor-speed evidence instead of the player one-pixel substep / `DS:34AF` table. Pass 128 locks pushed-off-edge fall so side contact can block but cannot keep moving the barrel horizontally until it lands. Exact wall-push caller/store and exact pushed-off-edge store remain open. |
 | Level-0 overworld tick | `asm_partial` | `openagent/overworld.py::update_overworld_tick` | `SAM1:0xB7D9..0xB8B0`, `SAM1:0xBAF5..0xBC0A`, `CS:0x2E20` | Entrance dispatch mapping; persistent completion flags; popup/table windows; coordinate-specific reference tests. |
 | Animated decor/contact policy | `asm_partial` | `openagent/animation.py`, `openagent/entities.py`, `openagent/rendering.py` | `SAM1:0xB599..0xB5FC`, state `0x2B/0x2C` | Generated frame-source tables; raw `0x78` audit; clean split between non-contact decor and hazards. |
@@ -65,11 +65,11 @@ before a zip is handed back.
    not from a live front-wall probe or full-tile clearance. Pass 126 fixes the runtime polling regression that left the barrel stuck once it became pass-through.  Pass 127 replaces the unsupported player-`DS:34AF` gravity reuse with a named 4px actor-step reconstruction for ordinary barrel push/fall, and pass 128 adds the unsupported-fall side-push lock.  The biggest remaining mismatch risk is the exact wall-push caller/store ASM
    path/DOSBox pixel timing, exact pushed-off-edge state/store timing, helper-`0x547C`
    projectile-hit branch, and whether the individual redraw cleanup calls matter.
-2. **Normal player-motion wrapper order/table indexing** — pass 130 fixes the observed one-tile
+2. **Normal player-motion wrapper order/table indexing / platform jump guard** — pass 130 fixes the observed one-tile
    opening regression by running the BC0E vertical fall/jump phase before the
    same-tick horizontal B7D9 probe, and pass 131 fixes the DS:34AF off-by-one
-   so the jump/fall arc actually reaches modulo-16 doorway alignment. The outer `0x520:0x68F5 / 0x520:0x6A0E`
-   wrappers still need a full trace before this can be marked fully verified.
+   so the jump/fall arc actually reaches modulo-16 doorway alignment. Pass 133 fixes the decoded platform `DS:6EC1` skip gate so jumping from a moving platform no longer gets snapped back/reset by actor carry. The outer `0x520:0x68F5 / 0x520:0x6A0E`
+   wrappers and the remaining raw `0x62` side effects still need a full trace before this can be marked fully verified.
 3. **Mission interaction dispatch order** — `update_player_interactions()` still
    mixes pickups, hazards and doors. It should become a small ordered table once
    the ASM caller order is traced.
@@ -82,10 +82,14 @@ before a zip is handed back.
    fallback path, so raw `0x51/0x52` are non-solid and harmless on body contact.
    Pass 129 adds the `0x3C/0x3D` rocket pair and confirms the key projectile
    rule: `0x01D6`, `0x01E8`, and `0x01EC` hurt through helper `0x53C4` but
-   keep flying through the player; `0x547C` owns impact/consumption.  The
-   remaining risk is broader projectile object/state redraw, exact `0x547C`
-   side effects, render-anchor consistency across all projectile families, and a
-   complete generic body-contact allowlist audit.
+   keep flying through the player; `0x547C` owns impact/consumption. Pass 132
+   adds the decoded bank4 rocket animation frames `37..39` right and `41..43`
+   left, and splits raw `0x75/state 0x23` out of the generic walker path: it is
+   a speed-0 actor that hurts through `0x53C4`, decrements its 3-hit counter
+   only through `0x547C`, and renders from bank2 `8..11`. The remaining risk is
+   broader projectile object/state redraw, exact `0x547C` side effects, the
+   object `0x00AA/state 0x1389` follow-up, render-anchor consistency across all
+   projectile families, and a complete generic body-contact allowlist audit.
 6. **Overworld entrance/progression flags** — movement/collision is much closer
    than before, but progression remains prototype-like.
 

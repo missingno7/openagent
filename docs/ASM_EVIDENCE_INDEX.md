@@ -59,9 +59,9 @@ Current phase rows cover mission fixed tick order, hard-death arc, normal missio
 ### Normal mission player movement
 - Fields: `DS:681E`, `DS:34AF`, `DS:34EA`, `DS:6EC1`, `DS:34EE`, `DS:34F0`
 - Status: `asm_partial`
-- Evidence: pass 9, pass 12, pass 80-84, pass 130, pass 131
-- Confirmed: normal horizontal ramp, normal jump/fall shared table, apex transition tick, atomic falling, exact static `+0x1CC/+0x1CD` fall probes, dynamic-platform crossing landing, and the shared `B7D9` 10x16 player-origin rectangle (`x+3/x+12`, `y/y+15`). Pass 130 applies the `BC0E` vertical fall/jump phase before the same-tick horizontal `B7D9` destination probe. Pass 131 corrects table indexing from `SAM1:0x28ED6..0x28F35`: `DS:34EA=1` reads initialized byte `0x34B0=0`, then `DS:34EA=2` reads 8, which restores the original one-tile-opening alignment frames.
-- Current gaps: exact outer player-control wrapper ordering around `BC0E` and horizontal control is still partial until `0x520:0x68F5 / 0x520:0x6A0E` are traced, original dynamic-platform actor overlap branch, raw-`0xA7` exact pushed-off-edge store/timing beyond the pass-127 actor-step and pass-128 falling-lock reconstruction, exact wall-blocked free-side snap caller/store and DOSBox pixel timing beyond the pass-125/pass-126 shrunken-edge reconstruction and polling fix, helper-`0x547C` projectile-hit branch, actor-backed solid fall overlap, ladders/direct vertical movement, difficulty modifiers.
+- Evidence: pass 9, pass 12, pass 80-84, pass 130, pass 131, pass 133
+- Confirmed: normal horizontal ramp, normal jump/fall shared table, apex transition tick, atomic falling, exact static `+0x1CC/+0x1CD` fall probes, dynamic-platform crossing landing, and the shared `B7D9` 10x16 player-origin rectangle (`x+3/x+12`, `y/y+15`). Pass 130 applies the `BC0E` vertical fall/jump phase before the same-tick horizontal `B7D9` destination probe. Pass 131 corrects table indexing from `SAM1:0x28ED6..0x28F35`: `DS:34EA=1` reads initialized byte `0x34B0=0`, then `DS:34EA=2` reads 8, which restores the original one-tile-opening alignment frames. Pass 133 fixes the raw `0x62` moving-platform carry guard at `SAM1:0x801F`: `DS:6EC1 != 0` skips player snap/carry/fall-counter reset, while the platform actor itself still moves.
+- Current gaps: exact outer player-control wrapper ordering around `BC0E` and horizontal control is still partial until `0x520:0x68F5 / 0x520:0x6A0E` are traced, remaining raw-`0x62` platform side effects/camera timing around `0x7FA6..0x8165`, raw-`0xA7` exact pushed-off-edge store/timing beyond the pass-127 actor-step and pass-128 falling-lock reconstruction, exact wall-blocked free-side snap caller/store and DOSBox pixel timing beyond the pass-125/pass-126 shrunken-edge reconstruction and polling fix, helper-`0x547C` projectile-hit branch, actor-backed solid fall overlap, ladders/direct vertical movement, difficulty modifiers.
 
 ### Enemy `0x24`
 - Object/state: `0x0065/state 0x27`
@@ -91,6 +91,14 @@ Current phase rows cover mission fixed tick order, hard-death arc, normal missio
 - Confirmed negative policy: decoded shot-damage evidence from pass 29 does not include launcher bodies `0x01D0/0x01D1`; pass 120 removes the unsupported movement/body helper reconstruction that made them solid/contact-harmful; pass 121 also excludes stationary launchers from the broad `check_enemy_touch()` fallback. They are hostile through emitted projectiles, not through body contact.
 - Projectile policy: helper `0x5784` receives `actor_y`; Python stores `Projectile.y = actor_y + 7` only because ordinary horizontal projectile sprites render at `y-7`, and uses `hit_y_offset=-7` so the `0x53C4` 10x16 damage rectangle remains at the ASM helper Y. Player contact hurts but does not consume `0x01D6`, `0x01E8`, or `0x01EC`; the `0x547C` branch owns impact/consumption.
 - Current gaps: exact body-contact dispatcher absence for `0x3C/0x3D` launcher bodies should still be verified separately from projectile pass-through; exact `0x547C` rocket impact effects and sprite-top DOSBox alignment remain open.
+
+
+### Raw 0x75 / object 0x006D / state 0x23
+- Status: `asm_partial`, corrected in pass 132.
+- Evidence: `SAM1:0x127C6..0x1288C` initializes object `0x006D`, direction `+1`, speed `DS:34E6=0`, hit counter `DS:34DC=3`, state `0x23`; `SAM1:0x9FED..0xA15E` advances frame counter `1..0x13`, calls `0x53C4` for player contact damage, and calls `0x547C` for projectile/actor impact.
+- Python: raw `0x75` is no longer a normal walker/contact fuse. It stays speed-0, hurts on contact, counts down only on projectile hits, and renders from bank2 tiles `8..11`.
+- Gap: object `0x00AA/state 0x1389` follow-up draw/clear remains approximated.
+
 
 
 ## Low confidence / should audit next

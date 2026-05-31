@@ -36,6 +36,8 @@ from .exe_actor_mechanics import (
     STATIONARY_SHOOTER_PROJECTILE_HITBOX_W,
     STATIONARY_SHOOTER_PROJECTILE_RENDER_Y_COMPENSATION,
     STATIONARY_SHOOTER_SPAWN_X_OFFSET,
+    STATIONARY_ROCKET_ANIM_LEFT,
+    STATIONARY_ROCKET_ANIM_RIGHT,
     deterministic_range,
     object_id_is_shootable,
 )
@@ -301,6 +303,9 @@ class CombatMixin:
             # hurts the player but does not rewrite/remove the projectile slot;
             # the separate 0x547C impact branch owns projectile consumption.
             bank, tile_right, tile_left = STATIONARY_SHOOTER_PROJECTILE.get(enemy.code, (1, 38, 39))
+            rocket_anim_tiles = None
+            if enemy.code in {0x3C, 0x3D}:
+                rocket_anim_tiles = STATIONARY_ROCKET_ANIM_RIGHT if enemy.direction > 0 else STATIONARY_ROCKET_ANIM_LEFT
             start_x = enemy.x + STATIONARY_SHOOTER_SPAWN_X_OFFSET.get(enemy.code, TILE - 2 if enemy.direction > 0 else -2)
             # SAM1:0x6C0D/0x6C39/0x6CF8/0x6D24 pass actor_y directly.
             # The renderer draws ordinary horizontal projectile sprites at y-7,
@@ -318,6 +323,7 @@ class CombatMixin:
                     tile_right=tile_right,
                     tile_left=tile_left,
                     owner="enemy",
+                    anim_tiles=rocket_anim_tiles,
                     narrow_hurt_on_hit=True,
                     keep_on_player_hit=True,
                     hit_w=STATIONARY_SHOOTER_PROJECTILE_HITBOX_W,
@@ -709,6 +715,18 @@ class CombatMixin:
         self.play_sound(SOUND_ENEMY_DEATH)
 
     def hit_enemy_with_projectile(self, enemy, shot: Projectile | None = None) -> None:
+        if enemy.kind == "state23_contact_bomb":
+            # SAM1:0x9FED..0xA15E calls helper 0x53C4 for player contact first,
+            # then helper 0x547C for projectile/actor impact.  Only the 0x547C
+            # path writes DS:34CC=3 and decrements DS:34DC from 3; contact with
+            # the player must hurt but must not count down the explosion.
+            if enemy.hp > 1:
+                enemy.hp -= 1
+                enemy.hit_flash_ticks = 3
+                self.play_sound(SOUND_HURT)
+                return
+            self.explode_contact_bomb(enemy)
+            return
         if enemy.kind == "state27_shooter":
             # Raw 0x24 / object 0x0065 has an object-specific hit branch and
             # the state-0x27 update only enters the death/score path while

@@ -562,6 +562,13 @@ class MovementCollisionMixin:
         platform top.
         """
         p = self.player
+        # SAM1:0x801F gates the carry/snap branch on DS:6EC1 == 0.
+        # Python stores that normal-jump flag as Player.jump_anim_timer.
+        # Without this guard, a player who jumps from a moving platform can be
+        # snapped back to actor_y-0x10 every actor tick; the carry branch also
+        # resets the fall counter, leaving the player in a permanent air pose.
+        if p.jump_anim_timer > 0:
+            return False
         player_left = float(p.x)
         player_right = player_left + 9.0
         platform_left = float(platform.x)

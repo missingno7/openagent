@@ -13,6 +13,7 @@ from .animation import (
     satellite_tile,
     state17_landmine_tile,
     state1f_actor_refs,
+    state23_contact_bomb_tile,
     state27_actor_refs,
     state2b_actor_refs,
     state2c_tile,
@@ -588,6 +589,18 @@ class RenderingMixin:
                 # from SAM1:0x36C2..0x3725 / 0x3728..0x378E instead.
                 tile = self.episode.tiles16.get(*state17_landmine_tile(enemy.object_id, enemy.frame_counter))
                 if tile:
+                    rx, ry = self.entity_render_position(enemy)
+                    frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
+                    continue
+            if enemy.kind == "state23_contact_bomb":
+                # SAM1:0x9FED..0xA15E keeps raw 0x75 in the right-facing
+                # 0x01..0x13 frame range and does not walk.  Do not fall back
+                # to the generic direction-based walker renderer, which can
+                # select bank2 tiles 12..15 and make the actor look like a
+                # mirrored patrol enemy.
+                tile = self.episode.tiles16.get(*state23_contact_bomb_tile(enemy.frame_counter))
+                if tile:
+                    tile = self.apply_enemy_hit_flash(tile, enemy)
                     rx, ry = self.entity_render_position(enemy)
                     frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
                     continue

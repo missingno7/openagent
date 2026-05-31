@@ -35,12 +35,17 @@ class DeathProbe:
 
 
 class PlatformProbe:
-    def __init__(self, *, dead: bool) -> None:
+    def __init__(self, *, dead: bool, jumping: bool = False) -> None:
         platform = MovingPlatform(64.0, 80.0, direction=1, step_px=2)
         self.platform = platform
         self.entities = LevelEntities([platform], [], [], [], [], [], [], [], [])
         self.player = Player(64, 64)
-        self.player.grounded = not dead
+        self.player.grounded = not dead and not jumping
+        self.player.jump_anim_timer = 1 if jumping else 0
+        # Use a non-initial counter in the jumping regression so an accidental
+        # carry-side reset is visible.
+        if jumping:
+            self.player.fall_ticks = 4
         self.player_dead_timer = 1 if dead else 0
 
     update_entities_tick = OpenAgentApp.update_entities_tick
@@ -82,6 +87,15 @@ def main() -> int:
     miss = PlatformProbe(dead=True)
     miss.player.y = 40.0
     assert not miss.platform_carry_contact_asm(miss.platform)
+
+    jumping = PlatformProbe(dead=False, jumping=True)
+    assert not jumping.platform_carry_contact_asm(jumping.platform), "SAM1:0x801F skips platform carry while DS:6EC1 jump is active"
+    jumping.update_entities_tick()
+    assert jumping.platform.x == 66.0, "platform actor should still move while player is jumping"
+    assert jumping.player.x == 64.0, "jumping player must not be carried by platform"
+    assert jumping.player.y == 64.0, "jumping player must not be snapped back to actor_y-0x10"
+    assert jumping.player.fall_ticks == 4, "platform carry must not reset DS:34EA while DS:6EC1 is active"
+    assert not jumping.player.grounded
 
     print("death camera/platform catch smoke OK")
     return 0

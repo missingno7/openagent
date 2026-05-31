@@ -677,6 +677,19 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, MovementCollisio
                         # blocked branch; stopping it prevents tunnelling while
                         # preserving the pickup overlap.
                     continue
+            if enemy.kind == "state23_contact_bomb":
+                # SAM1:0x9FED..0xA15E is not a walking/contact-fuse branch.
+                # The raw 0x75 init stores DS:34E6=0 and DS:34E2=+1, then the
+                # update only advances DS:34D6 through 0x01..0x13 and calls
+                # helper 0x53C4 for player-contact damage.  Helper 0x547C owns
+                # projectile/actor hit handling and is modelled in
+                # CombatMixin.hit_enemy_with_projectile().
+                enemy.frame_counter += 1
+                if enemy.frame_counter > 0x13:
+                    enemy.frame_counter = 1
+                if self.contact_hazard_53c4_overlaps_player(enemy.x, enemy.y) and self.hurt_flash <= 0:
+                    self.hurt_player()
+                continue
             if enemy.kind == "stationary_shooter":
                 # EXE states 0x0A..0x0D do not walk.  DS:34DA is an elapsed
                 # timer: SAM1:0x6B88/0x6C73 increments it first, compares it to
@@ -974,18 +987,6 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, MovementCollisio
                 if self.contact_hazard_53c4_overlaps_player(enemy.x, enemy.y) and self.hurt_flash <= 0:
                     self.hurt_player()
                 continue
-            if enemy.kind == "state23_contact_bomb":
-                # State 0x23 decrements DS:34DC only while the actor/player
-                # contact helper reports overlap.  After three such actor ticks
-                # it rewrites itself to explosion state and spawns side shots.
-                if self.enemy_overlaps_player(enemy):
-                    enemy.alert_ticks = enemy.alert_ticks or 3
-                    enemy.alert_ticks -= 1
-                    if enemy.alert_ticks <= 0:
-                        self.explode_contact_bomb(enemy)
-                        continue
-                else:
-                    enemy.alert_ticks = 0
             if enemy.alert_ticks > 0:
                 enemy.alert_ticks -= 1
             if enemy.kind == "ceiling_laser" and enemy.can_shoot:

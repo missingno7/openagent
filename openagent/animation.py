@@ -99,8 +99,11 @@ WALKER_ANIMATIONS: dict[int, WalkerAnimation] = {
     # 0x65 maps to bank 2 tile 16 and the adjacent tiles form the two direction
     # walking loops: 16..19 and 20..23.
     0x65: WalkerAnimation(2, (16, 17, 18, 19), (20, 21, 22, 23)),
-    # 0x75/0x76 are the same 8-frame enemy/object family with different map
-    # start frames. Treat both as horizontal walkers once extracted to runtime.
+    # 0x75/state 0x23 is a speed-0 contact/hit actor.  It stays in the
+    # right-facing 0x01..0x13 frame-counter range; renderer uses
+    # state23_contact_bomb_tile() for it so accidental direction flips cannot
+    # select the unrelated 12..15 visual family.  0x76 is the adjacent up-laser
+    # family and still uses the same decoded tile set.
     0x75: WalkerAnimation(2, (8, 9, 10, 11), (12, 13, 14, 15)),
     0x76: WalkerAnimation(2, (8, 9, 10, 11), (12, 13, 14, 15)),
     # 0x6E maps to object id 0x0085 / bank 2 tile 32.  Its state 0x26 later
@@ -293,6 +296,17 @@ def state2a_dog_counter_next(counter: int, *, direction: int) -> int:
 def state2a_dog_frame_index(frame_counter: int, *, direction: int) -> int:
     start = 0x29 if direction < 0 else 0x01
     return max(0, min(3, (max(start, frame_counter) - start) // 5))
+
+def state23_contact_bomb_tile(frame_counter: int) -> tuple[int, int]:
+    """Return the raw 0x75/state-0x23 visible cel.
+
+    SAM1:0x9FED..0xA15E increments DS:34D6 through 0x01..0x13 and wraps back
+    to 1; the raw-0x75 init at SAM1:0x127C6..0x1288C fixes DS:34E2=+1 and
+    DS:34E6=0, so this actor should not enter the generic left range.
+    """
+    frame = max(1, min(0x13, frame_counter))
+    return (2, 8 + ((frame - 1) // 5) % 4)
+
 
 def walker_tile(code: int, *, direction: int, anim_time: float = 0.0, frame_counter: int | None = None) -> tuple[int, int] | None:
     model = WALKER_ANIMATIONS.get(code)

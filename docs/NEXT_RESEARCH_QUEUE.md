@@ -1,6 +1,6 @@
 # Next Research Queue
 
-Highest-value unknowns after pass 130.
+Highest-value unknowns after pass 133.
 
 Start new accuracy work from `docs/TICK_ACCURACY_LEDGER.md`, not by scanning random pass logs. The ledger now links each tick phase to concrete ASM refs, Python entrypoints, blind spots and regression tests.
 
@@ -24,7 +24,7 @@ Start new accuracy work from `docs/TICK_ACCURACY_LEDGER.md`, not by scanning ran
 2. Capture a DOSBox reference for the two-cel death draw timing and compare it
    with the current bank-13 tile selection, especially at the `DS:683A+0xB8` bottom clamp.
 3. Audit generic hurt vs hard death callers and write a single damage policy module.
-4. Recheck transient `DS:6EC1` meanings in the moving-platform catch branch; pass 106 models the missing `DS:69F5` behavior, but not every edge of jump/carry state.
+4. Trace the remaining moving-platform branch side effects after pass 133: `DS:6EC1` now correctly blocks normal jump carry, but `DS:6EC2`, camera carry thresholds, and jump-off-platform DOSBox timing still need full mapping.
 
 ## Projectiles and enemy hit behavior
 
@@ -36,10 +36,10 @@ Start new accuracy work from `docs/TICK_ACCURACY_LEDGER.md`, not by scanning ran
 
 ## Remaining gameplay mechanics
 
-1. Trace the normal player-control wrapper around `BC0E` and the horizontal control path (`0x520:0x68F5 / 0x520:0x6A0E`) and compare the pass-130/pass-131 one-tile opening fix plus corrected `DS:34AF` table indexing against DOSBox pixel captures.
+1. Trace the normal player-control wrapper around `BC0E` and the horizontal control path (`0x520:0x68F5 / 0x520:0x6A0E`) and compare the pass-130/pass-131 one-tile opening fix plus corrected `DS:34AF` table indexing against DOSBox pixel captures; include pass-133 jump-off-moving-platform captures for raw `0x62`.
 2. Exact overworld entrance dispatch/progression flags beyond the runtime-local checked-house redraw.
 3. Door/key variants beyond the dynamite exit.
-4. Moving platforms and hidden platforms against exact runtime collision writes.
+4. Moving platforms and hidden platforms against exact runtime collision writes; raw `0x62` now honors the decoded `DS:6EC1` jump skip, but the full `0x7FA6..0x8165` side-effect branch is still partial.
 5. Raw `0xA7` remaining details beyond pass 128: player/barrel overlap geometry is guarded, pass 123 prevents wall-blocked pushes from entering the destructive `0x00AA/state 0x1389` score branch, pass 125/pass 126 cover the current wall-release reconstruction and polling fix, pass 127 moves ordinary barrel push/fall onto a named 4px actor-step reconstruction instead of the player `DS:34AF` table, and pass 128 prevents side-pushing while the barrel is in the unsupported falling phase. Remaining work is the exact wall-blocked caller/store ASM and DOSBox pixel timing, exact pushed-off-edge state/store timing, helper `0x547C` projectile-hit behavior, redraw cleanup fidelity, and reference capture for partial-overlap/multiple-dynamic-actor cases.
 6. Animated decorative tiles that still use heuristic frame ranges.
 

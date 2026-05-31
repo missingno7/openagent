@@ -106,7 +106,8 @@
         "openagent/player_motion.py::advance_fall_tick",
         "openagent/movement_collision.py::move_player_horizontal_tick",
         "openagent/movement_collision.py::move_player_fall_tick",
-        "openagent/movement_collision.py::move_player_upward_tick"
+        "openagent/movement_collision.py::move_player_upward_tick",
+        "openagent/movement_collision.py::platform_carry_contact_asm"
       ],
       "asm_refs": [
         "SAM1:0x532D..0x53C0",
@@ -117,7 +118,9 @@
         "DS:34AF",
         "DS:34EA",
         "DS:6EC1",
-        "SAM1:0xBC0E..0xBD8A"
+        "SAM1:0xBC0E..0xBD8A",
+        "SAM1:0x7FA6..0x8105 raw 0x62 platform carry branch",
+        "SAM1:0x801F DS:6EC1 normal-jump guard inside platform carry"
       ],
       "evidence_docs": [
         "docs/passes/exe_mechanisms_pass9.md",
@@ -128,32 +131,37 @@
         "docs/passes/exe_mechanisms_pass83.md",
         "docs/passes/exe_mechanisms_pass84.md",
         "docs/passes/exe_mechanisms_pass130.md",
-        "docs/passes/exe_mechanisms_pass131.md"
+        "docs/passes/exe_mechanisms_pass131.md",
+        "docs/passes/exe_mechanisms_pass133.md"
       ],
       "exact_claims": [
         "Horizontal movement uses the EXE-style step ramp and atomic destination probes for normal map collision.",
         "Normal falling/jumping uses the unshifted 34EA/34AF table: counter 1 reads byte 0x34B0=0, counter 2 reads 8, and B8B3 static landing probes perform the snap/clamp paths.",
         "The upward jump probe is separate from the downward fall probe.",
         "BC0E fall/jump Y updates are applied before the later horizontal B7D9 destination probe in the runtime tick, so a same-tick jump ascent or landing snap can align the player with a one-tile passage before horizontal acceptance.",
-        "The corrected table creates the original modulo-16 jump/fall alignment frames, including the falling sequence from +8 mod 16 back to tile-aligned after 1,1,2,2,2 px."
+        "The corrected table creates the original modulo-16 jump/fall alignment frames, including the falling sequence from +8 mod 16 back to tile-aligned after 1,1,2,2,2 px.",
+        "Moving-platform carry/catch honors the ASM DS:6EC1 guard: active normal jump skips player snap/carry/fall-counter reset, while hard-death DS:69F5 still does not block platform catch."
       ],
       "blind_spots": [
         "The exact caller/wrapper that sequences BAF5-style horizontal control and BC0E vertical control still needs a full overlay trace; pass 130/131 cover the observed one-tile opening regression with an ASM-anchored ordering reconstruction and corrected table indexing.",
         "The raw 0x62 dynamic actor/player overlap branch is not fully isolated.",
         "Actor-backed solid fall overlap remains a reconstruction around exact static probes.",
         "Ladder/direct vertical flags DS:6EC3/DS:6EC4 are not implemented.",
-        "Difficulty modifiers DS:69B0/DS:69A4 are not modeled."
+        "Difficulty modifiers DS:69B0/DS:69A4 are not modeled.",
+        "The complete raw 0x62 actor branch, including DS:6EC2 side effects, camera carry, and jump-off-platform DOSBox timing, still needs a full trace; pass 133 only fixes the decoded DS:6EC1 skip gate."
       ],
       "tests": [
         "tools/check_render_interpolation.py",
-        "tools/check_player_motion_accuracy.py"
+        "tools/check_player_motion_accuracy.py",
+        "tools/check_death_camera_platform.py"
       ],
       "next_actions": [
         "Trace the 0x520:0x68F5 / 0x520:0x6A0E player-control wrappers to turn the pass-130 ordering reconstruction into a fully named ASM phase.",
         "Add deterministic motion probes for wall approach, ceiling hit, edge fall, and landing.",
         "Trace DS:6EC3/DS:6EC4 ladder/direct vertical movement.",
         "Isolate raw 0x62 actor/player branch and compare against current crossing reconstruction.",
-        "Verify the corrected DS:34AF indexing against more DOSBox jump/fall captures near one-tile openings and ceilings."
+        "Verify the corrected DS:34AF indexing against more DOSBox jump/fall captures near one-tile openings and ceilings.",
+        "Trace raw 0x62 platform branch 0x7FA6..0x8165 with live DOS captures for jumping from a moving platform and compare DS:6EC1/DS:6EC2 transitions."
       ]
     },
     {
@@ -347,7 +355,8 @@
         "enemy_0x63_ceiling_laser",
         "enemy_0x24_helmet",
         "enemy_0xae_dog",
-        "stationary_launchers_0x51_0x52"
+        "stationary_launchers_0x51_0x52",
+        "enemy_0x75_state23_contact_bomb"
       ],
       "runtime_entrypoints": [
         "openagent/combat.py",
@@ -373,7 +382,9 @@
         "SAM1:0x6D1D..0x6D44",
         "SAM1:0x5A37..0x5CD8",
         "SAM1:0x5CDB..0x61F8",
-        "SAM1:0x547C..0x55ED"
+        "SAM1:0x547C..0x55ED",
+        "SAM1:0x127C6..0x1288C",
+        "SAM1:0x9FED..0xA15E"
       ],
       "evidence_docs": [
         "docs/passes/exe_mechanisms_pass46.md",
@@ -386,7 +397,8 @@
         "docs/passes/exe_mechanisms_pass119.md",
         "docs/passes/exe_mechanisms_pass120.md",
         "docs/passes/exe_mechanisms_pass121.md",
-        "docs/passes/exe_mechanisms_pass129.md"
+        "docs/passes/exe_mechanisms_pass129.md",
+        "docs/passes/exe_mechanisms_pass132.md"
       ],
       "exact_claims": [
         "Ceiling laser state 0x21 has a strict player-origin x gate and uses actor_y+8 for spawned laser origin.",
@@ -403,24 +415,34 @@
         "Helper 0x5784 maps object 0x01D6 to projectile state 0x07 and rocket objects 0x01E8/0x01EC to projectile state 0x0E.",
         "Projectile states 0x07 and 0x0E call helper 0x53C4 for player contact; this hurts the player but does not consume or rewrite the projectile slot.",
         "Helper 0x547C, not player contact, owns stationary shot/rocket impact consumption.",
-        "Python compensates stationary horizontal projectile rendering with y=actor_y+7 and hit_y_offset=-7 so the 0x53C4 damage rectangle remains anchored at the ASM actor_y."
+        "Python compensates stationary horizontal projectile rendering with y=actor_y+7 and hit_y_offset=-7 so the 0x53C4 damage rectangle remains anchored at the ASM actor_y.",
+        "Raw 0x3C/0x3D rocket projectiles animate with decoded bank4 frames 37..39 when moving right and 41..43 when moving left.",
+        "Raw 0x75/state 0x23 initializes object 0x006D with DS:34E6=0, DS:34E2=+1, DS:34DC=3, and does not patrol as a normal walker.",
+        "State 0x23 calls helper 0x53C4 for player contact damage; player contact does not decrement the three-hit counter or trigger the score/shrapnel path.",
+        "State 0x23 decrements DS:34DC only when helper 0x547C reports projectile/actor impact; after the third hit it awards 1000 and enters the object 0x00AA/state 0x1389 follow-up.",
+        "Raw 0x75 rendering uses bank2 tiles 8..11 from frame counter 1..19 and must not accidentally enter the generic left-facing 12..15 family."
       ],
       "blind_spots": [
         "The full projectile object/state table is incomplete.",
         "Impact spark versus silent projectile consumption is only partially separated; helper 0x547C still needs exact side-effect tracing.",
         "Object-0x72 foreground redraw and map-collision side effects are approximate.",
         "Raw 0x3C/0x3D launcher projectile path is now traced, but exact body-contact dispatcher absence for the launcher bodies still needs a separate audit.",
-        "The generic enemy-body contact fallback is still exclusion-based; it needs a full ASM-derived allowlist so new actor kinds do not inherit damage accidentally."
+        "The generic enemy-body contact fallback is still exclusion-based; it needs a full ASM-derived allowlist so new actor kinds do not inherit damage accidentally.",
+        "Raw 0x75 object 0x00AA/state 0x1389 follow-up draw/clear is still approximated after the hit counter expires.",
+        "Rocket animation frames are data-backed from decoded bank4; exact state-0x0E draw pointer math should still be traced if visual offsets differ."
       ],
       "tests": [
-        "tools/check_stationary_shooter_accuracy.py"
+        "tools/check_stationary_shooter_accuracy.py",
+        "tools/check_state23_contact_bomb_accuracy.py"
       ],
       "next_actions": [
         "Build a complete projectile object/state table from ASM helper 0x5784 and dispatcher branches.",
         "Trace helper 0x547C for stationary shot/rocket solid impact and visible impact sprites.",
         "Add broader projectile-policy regression coverage beyond stationary launchers.",
         "Trace object-0x72 map-collision foreground redraw side effects.",
-        "Audit check_enemy_touch() against the ASM contact dispatcher and turn the temporary exclusion list into a verified allowlist."
+        "Audit check_enemy_touch() against the ASM contact dispatcher and turn the temporary exclusion list into a verified allowlist.",
+        "Trace raw 0x75 object 0x00AA/state 0x1389 follow-up draw/clear sequence after the third 0x547C hit.",
+        "Trace state-0x0E rocket draw pointer math if the bank4 animation looks offset in DOSBox."
       ]
     }
   ]

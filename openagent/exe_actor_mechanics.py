@@ -34,7 +34,7 @@ SPECIAL_ACTOR_MODELS: dict[int, ActorSpawnModel] = {
     0x67: ActorSpawnModel(0x67, object_id=0x0177, step_px=2, behavior_state=0x04, random_initial_direction=True, timer_min=50, timer_max=99),
     0x47: ActorSpawnModel(0x47, object_id=0x017F, step_px=2, behavior_state=0x05, random_initial_direction=True, timer_min=30, timer_max=49),
     0x65: ActorSpawnModel(0x65, object_id=0x0075, step_px=2, behavior_state=0x22, random_initial_direction=True, aux_dc=3),
-    0x75: ActorSpawnModel(0x75, object_id=0x006D, step_px=2, behavior_state=0x23, random_initial_direction=True, aux_dc=3),
+    0x75: ActorSpawnModel(0x75, object_id=0x006D, step_px=0, behavior_state=0x23, random_initial_direction=False, aux_dc=3),
     0x76: ActorSpawnModel(0x76, object_id=0x0071, step_px=0, behavior_state=0x24, timer_min=10, timer_max=10, aux_dc=10),
     0x6E: ActorSpawnModel(0x6E, object_id=0x0085, step_px=2, behavior_state=0x26, random_initial_direction=True, timer_min=30, timer_max=49, aux_dc=3),
     0x7F: ActorSpawnModel(0x7F, object_id=0x0261, step_px=2, behavior_state=0x06, random_initial_direction=True, timer_min=2, timer_max=2),
@@ -114,6 +114,7 @@ ACTOR_HP_BY_OBJECT_ID: dict[int, int] = {
     0x0331: 3,
     0x0345: 3,
     0x0075: 3,
+    0x006D: 3,
     SHARK_SWIMMER_OBJECT_ID: 1,
     0x0261: 2,  # raw 0x7F/state 0x06 initializes DS:34D8 to 2.
 }
@@ -159,11 +160,14 @@ STATE29_MONEY_BAG_FALLING_OBJECT_ID = 0x026B
 STATE29_MONEY_BAG_SCORE = 5000
 STATE29_MONEY_BAG_FALL_STEP_PX = 4
 
-# State 0x23 / object 0x006D (raw 0x75) is a small walking contact bomb.
-# The branch at SAM1:0x9FED..0xA15E moves horizontally via the candidate X,
-# tests actor/player contact through helper 0x547C, then counts DS:34DC down
-# from 3.  On expiry it awards 1000 points, rewrites the actor to explosion
-# object 0x00AA/state 0x1389, and spawns two side projectiles 0x7D/0x7E.
+# State 0x23 / object 0x006D (raw 0x75) is not a normal walker.  The
+# initializer writes DS:34E6=0 and DS:34E2=+1, while the update branch at
+# SAM1:0x9FED..0xA15E advances only DS:34D6 and commits the precomputed
+# candidate X (which stays unchanged because speed is zero).  The branch calls
+# helper 0x53C4 for player contact damage every tick, then helper 0x547C for
+# projectile/actor hit handling.  Only 0x547C decrements DS:34DC from 3; on
+# expiry it awards 1000 points, rewrites the actor to object 0x00AA/state
+# 0x1389, and spawns two side projectiles 0x7D/0x7E.
 STATE23_CONTACT_BOMB_CODE = 0x75
 STATE23_CONTACT_BOMB_SCORE = 1000
 STATE23_SHRAPNEL_BANK = 1
@@ -298,14 +302,16 @@ STATIONARY_SHOOTER_DIRECTION: dict[int, int] = {
 }
 
 STATIONARY_SHOOTER_PROJECTILE: dict[int, tuple[int, int, int]] = {
-    # object 0x01D6 -> bank4 tile 19, same visible sprite both directions
+    # object 0x01D6 -> bank4 tile 19, same visible sprite both directions.
     0x52: (4, 19, 19),
     0x51: (4, 19, 19),
-    # object 0x01E8 -> bank4 tile 37 for the right-facing variant,
-    # object 0x01EC -> bank4 tile 41 for the left-facing variant.
+    # Rocket launchers animate through directional bank-4 families.  The
+    # single tiles below are the first cel / non-animated fallback.
     0x3C: (4, 37, 41),
     0x3D: (4, 37, 41),
 }
+STATIONARY_ROCKET_ANIM_RIGHT = (37, 38, 39)
+STATIONARY_ROCKET_ANIM_LEFT = (41, 42, 43)
 
 STATIONARY_SHOOTER_SPAWN_X_OFFSET: dict[int, int] = {
     0x52: 8,

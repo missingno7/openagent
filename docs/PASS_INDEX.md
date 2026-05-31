@@ -44,6 +44,7 @@ Start here for day-to-day work:
 | 129 | Re-audited stationary projectile policy for `0x51/0x52` and `0x3C/0x3D`: shots/rockets hurt the player through `0x53C4` but keep flying until the separate impact branch consumes them. |
 | 130 | Rechecked normal player one-tile opening movement: BC0E vertical fall/jump now happens before the same-tick horizontal B7D9 destination probe so jump/landing alignment is visible to horizontal acceptance. |
 | 131 | Corrected the DS:34AF vertical table indexing: counter 1 reads initialized byte 0x34B0=0, restoring the zero first jump tick and the later modulo-16 doorway alignment frame. |
+| 132 | Cleaned stale launcher extraction code, added bank4 37..39/41..43 rocket animation for `0x3C/0x3D`, and corrected raw `0x75/state 0x23` to a speed-0 contact-hurt / projectile-hit actor instead of a walking contact fuse. |
 
 ## Recent ASM / gameplay passes
 
@@ -83,6 +84,9 @@ Start here for day-to-day work:
 | 129 | Re-audited stationary projectile policy for `0x51/0x52` and `0x3C/0x3D`: shots/rockets hurt the player through `0x53C4` but keep flying until the separate impact branch consumes them. |
 | 130 | Rechecked normal player one-tile opening movement: BC0E vertical fall/jump now happens before the same-tick horizontal B7D9 destination probe so jump/landing alignment is visible to horizontal acceptance. |
 | 131 | Corrected the DS:34AF vertical table indexing: counter 1 reads initialized byte 0x34B0=0, restoring the zero first jump tick and the later modulo-16 doorway alignment frame. |
+| 132 | Cleaned stale launcher extraction code, added bank4 37..39/41..43 rocket animation for `0x3C/0x3D`, and corrected raw `0x75/state 0x23` to a speed-0 contact-hurt / projectile-hit actor instead of a walking contact fuse. |
+
+| 133 | Fixed moving-platform jump levitation: raw `0x62` carry now honors ASM `DS:6EC1` guard, so active normal jump skips player snap/carry while the platform actor still moves. |
 
 ## Full archive
 
