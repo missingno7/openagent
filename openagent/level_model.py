@@ -1,16 +1,12 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Iterable
 
-from .loader import ensure_editor_importable
-
-ensure_editor_importable(Path(__file__).resolve().parents[1])
-
-from secret_agent_editor.constants import LEVEL_H, LEVEL_W, ROW_BYTES, ROWS_PER_LEVEL
-from secret_agent_editor.levels import LevelInfo
-from secret_agent_editor.render import SecretAgentRenderer
+from openagent.game_assets.constants import LEVEL_H, LEVEL_W, ROW_BYTES, ROWS_PER_LEVEL
+from openagent.game_assets.levels import LevelInfo
+from openagent.game_assets.render import SecretAgentRenderer
 
 
 @dataclass(frozen=True)
@@ -36,28 +32,68 @@ class MapCell:
     layer: str
 
 
-def iter_map_cells(info: LevelInfo) -> Iterable[MapCell]:
+def invalidate_level_model_cache(info: LevelInfo) -> None:
+    """Drop cached map-cell indexes after direct raw-level edits.
+
+    Runtime code treats decoded level data as immutable.  Editor/research tools
+    that patch ``LevelInfo.raw`` in memory should call this before asking for
+    cells/collision again.
+    """
+    for attr in ("_map_cells_cache", "_cells_by_xy_cache", "_visual_coverage_by_xy_cache"):
+        if hasattr(info, attr):
+            delattr(info, attr)
+    if hasattr(info, "_layout_built"):
+        delattr(info, "_layout_built")
+
+
+def map_cells(info: LevelInfo) -> tuple[MapCell, ...]:
+    cached = getattr(info, "_map_cells_cache", None)
+    if cached is not None:
+        return cached
+
     SecretAgentRenderer.build_layout(info)
+    cells: list[MapCell] = []
     for y in range(LEVEL_H):
         bg_row = info.bg_raw_for_y[y]
         if bg_row is not None:
             row = info.raw[bg_row * ROW_BYTES:bg_row * ROW_BYTES + LEVEL_W]
-            for x, code in enumerate(row):
-                yield MapCell(x, y, code, bg_row, "bg")
+            cells.extend(MapCell(x, y, code, bg_row, "bg") for x, code in enumerate(row))
 
         fg_row = info.fg_raw_for_y[y]
         if fg_row is not None:
             row = info.raw[fg_row * ROW_BYTES:fg_row * ROW_BYTES + LEVEL_W]
-            for x, code in enumerate(row):
-                if x == 0 and code == ord("*"):
-                    continue
-                yield MapCell(x, y, code, fg_row, "fg")
+            cells.extend(
+                MapCell(x, y, code, fg_row, "fg")
+                for x, code in enumerate(row)
+                if not (x == 0 and code == ord("*"))
+            )
+
+    cached = tuple(cells)
+    setattr(info, "_map_cells_cache", cached)
+    return cached
+
+
+def cells_by_xy(info: LevelInfo) -> dict[tuple[int, int], tuple[MapCell, ...]]:
+    cached = getattr(info, "_cells_by_xy_cache", None)
+    if cached is not None:
+        return cached
+
+    grouped: dict[tuple[int, int], list[MapCell]] = defaultdict(list)
+    for cell in map_cells(info):
+        grouped[(cell.x, cell.y)].append(cell)
+    cached = {pos: tuple(cells) for pos, cells in grouped.items()}
+    setattr(info, "_cells_by_xy_cache", cached)
+    return cached
+
+
+def iter_map_cells(info: LevelInfo) -> Iterable[MapCell]:
+    return iter(map_cells(info))
 
 
 def cells_at(info: LevelInfo, x: int, y: int) -> tuple[MapCell, ...]:
     if x < 0 or y < 0 or x >= LEVEL_W or y >= LEVEL_H:
         return ()
-    return tuple(cell for cell in iter_map_cells(info) if cell.x == x and cell.y == y)
+    return cells_by_xy(info).get((x, y), ())
 
 
 def codes_at(info: LevelInfo, x: int, y: int) -> tuple[int, ...]:
@@ -76,6 +112,31 @@ def raw_start_positions(info: LevelInfo, code: int) -> list[tuple[int, int]]:
     return positions
 
 
+def visual_coverage_index(info: LevelInfo) -> dict[tuple[int, int], tuple[MapCell, ...]]:
+    cached = getattr(info, "_visual_coverage_by_xy_cache", None)
+    if cached is not None:
+        return cached
+
+    from openagent.game_assets.mapping import TILE_MAP
+
+    covered: dict[tuple[int, int], list[MapCell]] = defaultdict(list)
+    for cell in map_cells(info):
+        if cell.code in (0, 0x20, ord("*")):
+            continue
+        refs = TILE_MAP.get(cell.code)
+        if not refs:
+            covered[(cell.x, cell.y)].append(cell)
+            continue
+        for relx, rely, _bank, _tile_no in refs:
+            tx = cell.x + relx
+            ty = cell.y + rely
+            if 0 <= tx < LEVEL_W and 0 <= ty < LEVEL_H:
+                covered[(tx, ty)].append(cell)
+    cached = {pos: tuple(cells) for pos, cells in covered.items()}
+    setattr(info, "_visual_coverage_by_xy_cache", cached)
+    return cached
+
+
 def visual_coverage_cells(info: LevelInfo, x: int, y: int) -> tuple[MapCell, ...]:
     """Return raw map codes whose draw refs cover visual cell x/y.
 
@@ -86,22 +147,7 @@ def visual_coverage_cells(info: LevelInfo, x: int, y: int) -> tuple[MapCell, ...
     """
     if x < 0 or y < 0 or x >= LEVEL_W or y >= LEVEL_H:
         return ()
-    from secret_agent_editor.mapping import TILE_MAP
-
-    covered: list[MapCell] = []
-    for cell in iter_map_cells(info):
-        if cell.code in (0, 0x20, ord("*")):
-            continue
-        refs = TILE_MAP.get(cell.code)
-        if not refs:
-            if cell.x == x and cell.y == y:
-                covered.append(cell)
-            continue
-        for relx, rely, _bank, _tile_no in refs:
-            if cell.x + relx == x and cell.y + rely == y:
-                covered.append(cell)
-                break
-    return tuple(covered)
+    return visual_coverage_index(info).get((x, y), ())
 
 
 def build_runtime_collision_grid(

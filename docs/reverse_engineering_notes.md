@@ -21,12 +21,12 @@ and EXE-derived hard assumptions, start with:
   is the unpacked `SAM*_unlz.exe` from `dissassembly`.
 - Static screens (`.APO`, `.TTL`, `.CRD`, `.END`) are PCX-family images. They
   start with a normal PCX manufacturer byte (`0x0A`) and use 320x200 geometry.
-- `secret_agent_editor` confirms the main map/graphics pipeline:
+- `openagent.game_assets` confirms the main map/graphics pipeline:
   - `SAM?01.GFX` is `tls-sagent-8k`: 16 banks, 50 masked 16x16 EGA tiles per
     bank, decrypted with the Secret Agent XOR/bit-reversal filter and an
     8064-byte reset.
   - `SAM?02.GFX` is the 8x8 sprite/tile bank, using the same transform with a
-    2048-byte reset. `openagent.sprites` now decodes this as three banks of 50
+    2048-byte reset. `openagent.game_assets.graphics` now decodes this as three banks of 50
     8x8 masked EGA sprites.
   - `SAM?03.GFX` is the encrypted level archive, decrypted with a 42-byte reset.
     Each block is 2016 bytes. Block 0 is the world map; blocks 1-16 are normal

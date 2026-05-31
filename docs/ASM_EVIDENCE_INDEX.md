@@ -31,15 +31,18 @@ It is intentionally concise: use it to find the current source of truth quickly.
 ### HUD/status bar
 - Assets: `SAM?02.GFX`, 8x8 EGA sprites
 - Pointers: `DS:6E32` HUD page, `DS:6E36/DS:6E3A` table/menu pages
-- Status: `asm_partial`
-- Evidence: pass 58-61, pass 70
-- Current gaps: exact field slots and all icon conditions.
+- Routine: `SAM1:0x181F1..0x1849E`
+- Status: `asm_partial` for the broad UI entry; mission HUD slots are now traced
+- Evidence: pass 58-61, pass 70, pass 93
+- Confirmed: score slots `0x00..0x05`, ammo icon slots `0x0C..0x0D`, ammo digits `0x0E..0x0F`, speed `0x14`, dynamite `0x19`, red/blue/green keys `0x1B..0x1D`, floppy `0x1E`, lives starting at slot `0x21`.
+- Current gaps: menu/table windows and special text control codes.
 
 ### Player death lifecycle
 - State fields: `DS:69F5`, `DS:69F6`, lives `DS:6A40`
 - Status: `asm_partial`
-- Evidence: pass 55, pass 57, pass 62, pass 63
-- Current gaps: exact animation sequence, freeze/respawn transition, and level reset semantics.
+- Evidence: pass 55, pass 57, pass 62, pass 63, pass 92
+- Confirmed: `DS:69F6=0x23` drives a signed table arc through `SAM1:0x1A61..0x1AE8`; positive entries throw the player upward, negative entries make him fall, and world/actor updates should not freeze.
+- Current gaps: exact `0x520:0x011A` restart helper semantics for score/ammo/inventory persistence and game-over/menu flow.
 
 ### Normal mission player movement
 - Fields: `DS:681E`, `DS:34AF`, `DS:34EA`, `DS:6EC1`
@@ -56,15 +59,17 @@ It is intentionally concise: use it to find the current source of truth quickly.
 - Current gaps: exact independent upper/lower animation and projectile origin validation.
 
 ### Enemy `0x63`
-- State: `0x21`
-- Status: `asm_partial`
-- Evidence: earlier 0x63 notes; needs consolidation
-- Current gaps: this was corrected several times and needs a fresh single-source audit note.
+- Raw/object/state: raw `0x63`, object `0x0345`, state `0x21`; emitted projectile object `0x00C7` becomes `0x72/state 0x89`.
+- Status: `asm_partial`, but the core state-`0x21` firing/contact path is now consolidated.
+- Evidence: pass 41, pass 94, pass 95, pass 96, pass 97.
+- Confirmed: timer `DS:34DA` arms against `DS:34D8`; failed player-under-column gate decrements back to armed-minus-one; gate is strict `actor_x-16 < DS:34EE < actor_x+16` and `actor_y < DS:34F0`; projectile helper gets `actor_y+8`; body contact calls helper `0x53C4`; emitted object `0x00C7` is rewritten by helper `0x5784` to object `0x72/state 0x89`, whose 10x16 rectangle also routes through generic `0x53C4` hurt and uses the same player-origin 10x16 rectangle (`DS:34EE..+9`, `DS:34F0..+15`) confirmed for object-`0x72` in pass 97.
+- Current gaps: candidate-position ceiling-track byte probes and state-`0x89` map-collision/redraw side effects still need a focused reference test.
 
 ### Projectiles
 - Status: `asm_partial`
-- Evidence: pass 64
-- Current gaps: complete projectile object/state table and exact impact-spark policy.
+- Evidence: pass 64, pass 95, pass 96, pass 97
+- Confirmed: helper `0x5784` maps player/ordinary shots to state `0x07`; object `0x72` normally maps to state `0x25`, while ceiling-laser input object `0x00C7` is rewritten to object `0x72/state 0x89`; dispatcher order shows state `0x89` calls generic `0x53C4`, while state `0x25` owns the direct hard-death rectangle. Both narrow laser policies use the player's origin gameplay rectangle (`DS:34EE..+9`, `DS:34F0..+15`), not the full decoded sprite.
+- Current gaps: complete projectile object/state table, exact object-`0x72` foreground redraw policy, and exact impact-spark policy for non-laser projectiles.
 
 ## Low confidence / should audit next
 

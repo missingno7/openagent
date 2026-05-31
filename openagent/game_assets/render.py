@@ -46,6 +46,8 @@ class SecretAgentRenderer:
                     img.alpha_composite(base_tile, (x * TILE, y * TILE))
 
         self.build_layout(info)
+        bg_y_by_raw = {raw_row: y for y, raw_row in enumerate(info.bg_raw_for_y) if raw_row is not None}
+        fg_y_by_raw = {raw_row: y for y, raw_row in enumerate(info.fg_raw_for_y) if raw_row is not None}
         for raw_row in range(2, ROWS_PER_LEVEL):
             row = info.raw[raw_row * ROW_BYTES:raw_row * ROW_BYTES + LEVEL_W]
             if not row:
@@ -55,7 +57,7 @@ class SecretAgentRenderer:
                 continue
             if not is_fg and not show_bg:
                 continue
-            target_y = self.raw_to_visual_y(info, raw_row, is_fg)
+            target_y = (fg_y_by_raw if is_fg else bg_y_by_raw).get(raw_row)
             if target_y is None:
                 continue
             mapping = WORLD_MAP if level_index == 0 else TILE_MAP
@@ -145,6 +147,8 @@ class SecretAgentRenderer:
 
     @staticmethod
     def build_layout(info: LevelInfo) -> None:
+        if getattr(info, "_layout_built", False):
+            return
         info.bg_raw_for_y = [None] * LEVEL_H
         info.fg_raw_for_y = [None] * LEVEL_H
         visual_y = 0
@@ -160,6 +164,7 @@ class SecretAgentRenderer:
                 if 0 <= visual_y < LEVEL_H:
                     info.bg_raw_for_y[visual_y] = raw_row
                 visual_y += 1
+        setattr(info, "_layout_built", True)
 
     @staticmethod
     def raw_to_visual_y(info: LevelInfo, raw_row: int, is_fg: bool) -> Optional[int]:

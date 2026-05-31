@@ -41,3 +41,10 @@ The pass files are still kept verbatim under `docs/passes/`.
 - Pass 90: Rechecked raw `0x77` teleporter cooldown/nudge and normal jump-start headroom gate; fixed destination re-exit ping-pong and blocked jumps into a solid tile above.
 
 - Pass 91: Rechecked damage-gated bank-12 enemies and several missed actor visuals: 0x58 closed-top/vulnerable-open hit policy, 0x6D fire walker, 0x23 satellite score target, 0x40 upper-only animation, and 0x4D triggered-mine explosion draw.
+- Pass 92: Rechecked `DS:69F5/DS:69F6` hard-death lifecycle; implemented the signed table-driven upward-then-downward death arc, kept world/actor updates running during death, and reset the mission state after the countdown.
+- Pass 93: Re-audited the mission HUD/status routine (`SAM1:0x181F1..0x1849E`); added the two-cell ammo icon, fixed speed/dynamite/key/floppy slots, removed the fake glasses HUD icon, and moved lives to the ASM slot loop.
+- Pass 94: Re-audited raw `0x63` / state `0x21`; fixed the player-origin firing gate, moved the ceiling laser spawn to `actor_y+8`, and added the exact narrow `0x53C4` contact helper for known 0x53C4 hazards.
+- Pass 95: Re-audited the projectile helper path for raw `0x63`: object `0x00C7` is rewritten to object `0x72/state 0x89`. Pass 96 corrects the damage-policy interpretation.
+
+- Pass 96: Re-opened object-`0x72` projectile states; corrected state `0x89` to narrow generic `0x53C4` hurt, moved direct hard-death policy to object `0x72/state 0x25`, and made object-`0x72` solid impacts invisible instead of drawing the generic wall spark.
+- Pass 97: Rechecked object-`0x72` laser overlap against `SAM1:0xA660..0xA6F0`; narrow laser states now compare against the player's 10x16 origin rectangle instead of the full decoded sprite footprint.

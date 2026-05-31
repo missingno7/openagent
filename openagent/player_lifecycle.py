@@ -7,7 +7,7 @@ mixin makes those rules easier to audit separately from map/entity update code.
 
 from __future__ import annotations
 
-from .game_constants import DOS_TICK_HZ
+from .game_constants import DOS_TICK_HZ, PLAYER_DEATH_TIMER_INITIAL
 from .player import Player
 from .sound import SOUND_HURT, SOUND_PLAYER_DEATH
 
@@ -37,7 +37,7 @@ class PlayerLifecycleMixin:
         if self.player_dead_timer > 0:
             return
         self.lives = max(0, self.lives - 1)
-        self.player_dead_timer = 0x23
+        self.player_dead_timer = PLAYER_DEATH_TIMER_INITIAL
         self.player_death_frame_counter = 0
         self.hurt_flash = 0.0
         self.play_sound(SOUND_PLAYER_DEATH)
@@ -54,11 +54,24 @@ class PlayerLifecycleMixin:
         self.reset_teleport_state()
 
     def respawn_after_death(self) -> None:
-        # Game-over/menu flow is not rebuilt yet; keep playtesting possible by
-        # restarting the life counter when it reaches zero.
-        if self.lives <= 0:
-            self.lives = 3
+        # SAM1 calls the restart/transition helper when DS:69F6 reaches zero.
+        # The original flow rebuilds the mission instead of merely dropping the
+        # player back onto the existing mutated map, so reset runtime level
+        # state (actors, collected cells, opened doors, temporary inventory) and
+        # then put the player at the mission start.  The game-over/menu path is
+        # not rebuilt yet; if lives reaches zero, refill it to keep playtesting
+        # possible.
+        remaining_lives = self.lives
+        score = self.score
+        if remaining_lives <= 0:
+            remaining_lives = 3
         self.player_dead_timer = 0
         self.player_death_frame_counter = 0
         self.hurt_flash = 0.0
-        self.spawn_player()
+        self.load_level(reset_player=True)
+        self.lives = remaining_lives
+        self.score = score
+        self.player_dead_timer = 0
+        self.player_death_frame_counter = 0
+        self.hurt_flash = 0.0
+        self._force_next_draw = True

@@ -40,11 +40,11 @@ backgrounds.
 
 ## Implementation changes
 
-- `secret_agent_editor/secret_agent_editor/tile_animations.py`
+- `openagent/game_assets/tile_animations.py`
   - removed background animation groups
   - added `ANIMATED_TILES={(4,48): ((4,48),(4,0))}`
   - kept `background_variant_tile_ref()` as a static helper for `0x35..0x37`
-- `secret_agent_editor/secret_agent_editor/render.py`
+- `openagent/game_assets/render.py`
   - no longer accepts/uses `bg_frame`
   - background base tile is static
   - map codes `0x35..0x37` draw static `background+1/+2/+3`

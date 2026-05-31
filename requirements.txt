@@ -1,1 +1,1 @@
--r secret_agent_editor/requirements.txt
+Pillow>=10.0

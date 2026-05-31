@@ -3,7 +3,7 @@ from __future__ import annotations
 from .constants import KEY
 
 
-def reverse_bits(v: int) -> int:
+def _reverse_bits(v: int) -> int:
     v = ((v & 0xF0) >> 4) | ((v & 0x0F) << 4)
     v = ((v & 0xCC) >> 2) | ((v & 0x33) << 2)
     v = ((v & 0xAA) >> 1) | ((v & 0x55) << 1)
@@ -20,13 +20,5 @@ def decrypt_secret_agent(data: bytes, *, row_key_reset: int | None = None) -> by
     out = bytearray(len(data))
     for i, b in enumerate(data):
         k = KEY[(i % row_key_reset if row_key_reset else i) % len(KEY)]
-        out[i] = reverse_bits(b) ^ k
-    return out
-
-
-def encrypt_secret_agent(data: bytes, *, row_key_reset: int | None = None) -> bytearray:
-    out = bytearray(len(data))
-    for i, b in enumerate(data):
-        k = KEY[(i % row_key_reset if row_key_reset else i) % len(KEY)]
-        out[i] = reverse_bits(b ^ k)
+        out[i] = _reverse_bits(b) ^ k
     return out

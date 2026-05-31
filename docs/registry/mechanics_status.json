@@ -19,29 +19,37 @@
       "status": "asm_partial",
       "implemented_in": [
         "openagent/hud.py",
-        "openagent/sprites.py"
+        "openagent/game_assets/graphics.py"
       ],
       "evidence": [
         "docs/passes/exe_mechanisms_pass58.md",
         "docs/passes/exe_mechanisms_pass59.md",
         "docs/passes/exe_mechanisms_pass60.md",
         "docs/passes/exe_mechanisms_pass61.md",
-        "docs/passes/exe_mechanisms_pass70.md"
+        "docs/passes/exe_mechanisms_pass70.md",
+        "docs/passes/exe_mechanisms_pass93.md"
       ],
       "asm_refs": [
         "DS:6E32",
         "DS:6E36",
         "DS:6E3A",
-        "SAM1:0x18822 text renderer family"
+        "SAM1:0x18822 text renderer family",
+        "SAM1:0x181F1..0x1849E HUD draw routine",
+        "DS:6858 ammo",
+        "DS:69A4 speed icon",
+        "DS:69F4 dynamite icon",
+        "DS:69E9/69EA/69EB key icons",
+        "DS:69EC floppy icon",
+        "DS:6A40 lives"
       ],
-      "confidence": "medium",
+      "confidence": "high",
       "known_gaps": [
-        "Exact status slot layout and all inventory icon conditions still need a full ASM pass.",
-        "Menu/table windows share the 8x8 pages but are not fully reconstructed."
+        "Menu/table windows share the 8x8 pages but are not fully reconstructed.",
+        "Special text/window control codes still need a dedicated pass."
       ],
       "next_actions": [
-        "Trace the full HUD draw routine and write a field-by-field slot map.",
-        "Build a visual HUD atlas with tile numbers for page 2 and link each icon to an ASM offset."
+        "Trace DS:6E36/DS:6E3A menu/table rendering and window control codes.",
+        "Compare a DOSBox screenshot against the pass-93 HUD slot map for visual confirmation."
       ]
     },
     {
@@ -80,7 +88,7 @@
     {
       "id": "player_death_lifecycle",
       "area": "player",
-      "title": "Player hurt/death/respawn lifecycle",
+      "title": "Player hurt/death/bounce/restart lifecycle",
       "raw_codes": [],
       "objects": [],
       "states": [],
@@ -93,21 +101,24 @@
         "docs/passes/exe_mechanisms_pass55.md",
         "docs/passes/exe_mechanisms_pass57.md",
         "docs/passes/exe_mechanisms_pass62.md",
-        "docs/passes/exe_mechanisms_pass63.md"
+        "docs/passes/exe_mechanisms_pass63.md",
+        "docs/passes/exe_mechanisms_pass92.md"
       ],
       "asm_refs": [
         "DS:69F5",
         "DS:69F6",
         "DS:6A40"
       ],
-      "confidence": "medium",
+      "confidence": "medium-high",
       "known_gaps": [
-        "Death animation exists but exact frame sequence/state freeze semantics are not fully traced.",
-        "Level reset vs same-room respawn details need a dedicated ASM trace."
+        "The hard-death bounce arc and mission-state reset are implemented, but the exact 0x520:0x011A restart helper still needs tracing for score/ammo/inventory persistence.",
+        "Game-over/menu flow when lives reaches zero is still approximated for playtesting.",
+        "Death draw cel timing should be visually compared against a DOSBox capture."
       ],
       "next_actions": [
-        "Trace every write to DS:69F5/DS:69F6 and life counter DS:6A40.",
-        "Add a reproducible mine/laser/enemy-shot death scenario."
+        "Trace the far call reached when DS:69F6 decrements to zero and record which globals it resets.",
+        "Capture mine/water/laser death in DOSBox and compare the bank-13 two-cel timing.",
+        "Add a deterministic runtime test for the 34-tick signed death displacement sequence."
       ]
     },
     {
@@ -319,21 +330,33 @@
         "openagent/combat.py"
       ],
       "evidence": [
-        "earlier 0x63 fix notes",
-        "docs/MECHANICS_INDEX.md"
+        "docs/passes/exe_mechanisms_pass41.md",
+        "docs/passes/exe_mechanisms_pass94.md",
+        "docs/passes/exe_mechanisms_pass95.md",
+        "docs/passes/exe_mechanisms_pass96.md",
+        "docs/passes/exe_mechanisms_pass97.md"
       ],
       "asm_refs": [
-        "state 0x21",
-        "SAM1:0x98D9..0x9AB6 noted in prior handoff"
+        "SAM1:0x98D9..0x9AB6 state 0x21 update branch",
+        "SAM1:0x9A48..0x9A78 strict player-origin firing gate",
+        "SAM1:0x9A91..0x9AA6 projectile helper 0x5784 object 0x00C7 speed 8 y+8",
+        "SAM1:0x9ADB helper 0x53C4 body contact damage",
+        "SAM1:0x53C4..0x5479 generic narrow contact damage helper",
+        "SAM1:0x599A..0x59C3 projectile helper 0x00C7 rewrite",
+        "SAM1:0xA239..0xA450 state 0x89 narrow generic 0x53C4 beam",
+        "SAM1:0xA456..0xA70C state 0x25 direct hard-death object-0x72 beam",
+        "SAM1:0xA660..0xA6F0 object-0x72/player-origin 10x16 overlap test"
       ],
-      "confidence": "medium",
+      "confidence": "medium-high",
       "known_gaps": [
-        "This was revised several times; it needs a fresh single-source ASM note with exact movement and firing gates.",
-        "Ceiling support probe and edge turnaround should be validated against original."
+        "Core state-0x21 timing, firing gate, projectile spawn offset, body-contact helper, state-0x89 generic-hurt policy, and player-origin laser hit rectangle are traced.",
+        "Ceiling support probe and edge turnaround should still be validated against a tiny original/DOSBox reference setup.",
+        "State-0x89 map-collision foreground redraw and impact side effects are still approximated."
       ],
       "next_actions": [
-        "Create a dedicated docs/passes/0x63 audit note from the current disassembly.",
-        "Add a tiny ceiling-track test scenario."
+        "Trace candidate-position ceiling-track byte probes against a tiny test map.",
+        "Rebuild or document the state-0x89 collision/redraw calls around SAM1:0xA2AF..0xA604.",
+        "Compare ceiling laser generic-hurt behavior against a DOSBox capture."
       ]
     },
     {
@@ -377,28 +400,45 @@
         "0x0187 impact-like",
         "0x0339",
         "0x033B",
-        "0x0089 lightning"
+        "0x0089 lightning",
+        "0x0072 up-laser"
       ],
-      "states": [],
+      "states": [
+        "0x07",
+        "0x25",
+        "0x89",
+        "0x1388"
+      ],
       "status": "asm_partial",
       "implemented_in": [
         "openagent/combat.py"
       ],
       "evidence": [
-        "docs/passes/exe_mechanisms_pass64.md"
+        "docs/passes/exe_mechanisms_pass64.md",
+        "docs/passes/exe_mechanisms_pass95.md",
+        "docs/passes/exe_mechanisms_pass96.md",
+        "docs/passes/exe_mechanisms_pass97.md"
       ],
       "asm_refs": [
         "SAM1:0x4EDD..0x4F94",
-        "SAM1:0x5C30..0x5C82"
+        "SAM1:0x5C30..0x5C82",
+        "SAM1:0x5784 projectile helper",
+        "SAM1:0x599A..0x59C3 object 0x00C7 -> 0x72/state 0x89",
+        "SAM1:0xA239..0xA450 state 0x89 generic 0x53C4 narrow hurt",
+        "SAM1:0xA456..0xA70C state 0x25 direct hard death",
+        "SAM1:0xA660..0xA6F0 object-0x72/player-origin 10x16 overlap test",
+        "DS:34EE..+9 / DS:34F0..+15 player-origin gameplay rectangle"
       ],
-      "confidence": "medium",
+      "confidence": "medium-high",
       "known_gaps": [
         "Impact spark vs silent consumption is only partially separated.",
-        "Enemy projectile subclasses are not fully mapped."
+        "Enemy projectile subclasses are not fully mapped.",
+        "Object-0x72 state 0x25 and 0x89 damage outcomes and player-origin hit rectangle are now separated; exact foreground redraw side effects are still approximated."
       ],
       "next_actions": [
-        "Build a projectile object/state table and attach each spawn helper call site.",
-        "Verify wall-hit, enemy-hit, player-hit, and timeout behavior separately."
+        "Build a projectile object/state table from helper 0x5784 and dispatcher states 0x07/0x25/0x28/0x89.",
+        "Rebuild object-0x72 collision/redraw side effects instead of only suppressing the generic wall spark.",
+        "Verify when non-laser projectile impacts produce visible object 0x0187 sparks versus silent consumption."
       ]
     },
     {
@@ -426,7 +466,8 @@
       "evidence": [
         "docs/passes/exe_mechanisms_pass43.md",
         "docs/passes/exe_mechanisms_pass53.md",
-        "docs/passes/exe_mechanisms_pass54.md"
+        "docs/passes/exe_mechanisms_pass54.md",
+        "docs/passes/exe_mechanisms_pass94.md"
       ],
       "asm_refs": [
         "state 0x2B",
@@ -435,7 +476,8 @@
       "confidence": "low",
       "known_gaps": [
         "User already caught wrong frame counts for D4-like decorations.",
-        "Need a data-driven animation table instead of hardcoded frame guesses."
+        "Need a data-driven animation table instead of hardcoded frame guesses.",
+        "Raw 0x78 contact now uses the exact narrow helper 0x53C4, but frame-source details for animated decorations are still not fully audited."
       ],
       "next_actions": [
         "Audit each animated raw tile against 16x16 assets and ASM frame writes.",

@@ -2,15 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-import sys
-
-ROOT = Path(__file__).resolve().parents[1]
-EDITOR_ROOT = ROOT / "secret_agent_editor"
-if str(EDITOR_ROOT) not in sys.path:
-    sys.path.insert(0, str(EDITOR_ROOT))
-
-from secret_agent_editor.constants import LEVEL_H, LEVEL_W, TILE
+from openagent.game_assets.constants import LEVEL_H, LEVEL_W, TILE
 
 
 # Secret Agent keeps a padded runtime cell buffer. The disassembly indexes it as

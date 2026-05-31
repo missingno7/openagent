@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from secret_agent_editor.bundle import GameBundle
+    from openagent.game_assets.bundle import GameBundle
 
 
 @dataclass(frozen=True)
@@ -35,17 +34,9 @@ class Campaign:
         self.bundle.cleanup()
 
 
-def ensure_editor_importable(root: Path) -> None:
-    editor_root = root / "secret_agent_editor"
-    if str(editor_root) not in sys.path:
-        sys.path.insert(0, str(editor_root))
-
 
 def load_campaign(source: Path) -> Campaign:
-    root = Path(__file__).resolve().parents[1]
-    ensure_editor_importable(root)
-
-    from secret_agent_editor.bundle import load_game
+    from openagent.game_assets.bundle import load_game
 
     bundle = load_game(source)
     assets = {ep: scan_episode_assets(bundle.source, ep) for ep in sorted(bundle.episodes)}

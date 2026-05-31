@@ -53,11 +53,11 @@ The provided life icon matches `SAM102.GFX` bank 2 tile 11.
 Added a real 8x8 decoder:
 
 ```text
-secret_agent_editor.graphics.Tileset8
-secret_agent_editor.graphics.decode_prographx_8x8()
+openagent.game_assets.graphics.Tileset8
+openagent.game_assets.graphics.decode_prographx_8x8()
 ```
 
-`secret_agent_editor.bundle.Episode` now carries `tiles8` alongside `tiles16`.
+`openagent.game_assets.bundle.Episode` now carries `tiles8` alongside `tiles16`.
 `openagent.runtime.draw_status_bar()` now uses the decoded `SAM?02.GFX` cells
 for the bottom 8px HUD strip instead of hand-made PIL masks:
 

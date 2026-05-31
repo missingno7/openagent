@@ -15,12 +15,11 @@ from __future__ import annotations
 
 from PIL import Image
 
-from .game_constants import PLAYER_H, PLAYER_W, WORLD_MOVE_SPEED
+from .game_constants import PLAYER_H, PLAYER_W
 from .level_model import codes_at, iter_map_cells
-from .player import Player
 from .semantics import WORLD_BLOCKED_CODES, WORLD_ENTRANCE_CODES, WORLD_PLAYER_CODE
 
-from secret_agent_editor.constants import LEVEL_H, LEVEL_W, TILE
+from openagent.game_assets.constants import LEVEL_H, LEVEL_W, TILE
 
 
 class OverworldMixin:
@@ -65,10 +64,7 @@ class OverworldMixin:
         if x < 0 or y < 0 or x >= LEVEL_W or y >= LEVEL_H:
             return True
         info = self.episode.levels[0]
-        cell_codes = [code for code in codes_at(info, x, y) if code not in (0, 0x20, ord("*"))]
-        if not cell_codes:
-            return False
-        return any(code in WORLD_BLOCKED_CODES for code in cell_codes)
+        return any(code in WORLD_BLOCKED_CODES for code in codes_at(info, x, y))
 
     def world_player_blocked(self) -> bool:
         p = self.player

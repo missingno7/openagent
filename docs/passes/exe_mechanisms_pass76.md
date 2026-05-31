@@ -63,5 +63,5 @@ It validates that every entry has:
 ```bash
 python tools/audit_mechanics_status.py
 python tools/audit_project.py
-PYTHONDONTWRITEBYTECODE=1 python -m compileall -q openagent secret_agent_editor
+PYTHONDONTWRITEBYTECODE=1 python -m compileall -q openagent openagent.game_assets
 ```

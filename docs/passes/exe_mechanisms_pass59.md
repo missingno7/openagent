@@ -32,8 +32,8 @@ There is **no 3-byte header** in the 2k 8x8 sprite blocks.  The 3-byte header be
 
 ## Implementation changes
 
-- `secret_agent_editor.graphics.decode_prographx_8x8()` now starts each 2k block at offset `0` and decodes exactly 50 sprites.
-- `openagent.sprites.decode_prographx_8x8()` was changed the same way.
+- `openagent.game_assets.graphics.decode_prographx_8x8()` now starts each 2k block at offset `0` and decodes exactly 50 sprites.
+- `openagent.game_assets.graphics.decode_prographx_8x8()` is the single shared decoder now.
 - HUD score digits now use the corrected UI font row: `SAM?02.GFX` set/bank 0, tiles `30..39`.
 - The player-life icon remains `SAM?02.GFX` set/bank 2, tile `11`; with the corrected decode it matches the supplied 8x8 life icon sample much more closely.
 - The temporary HUD layout is still not fully proven slot-for-slot from the EXE, but all visible HUD pixels now come from the correctly decoded external 8x8 asset.

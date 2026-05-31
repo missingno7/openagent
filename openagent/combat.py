@@ -6,8 +6,12 @@ from .exe_actor_mechanics import (
     BANK14_GUARD_BEHAVIOUR_BY_BASE_TILE,
     BANK14_GUARD_SHOOT_TIMER_RANGE_BY_BASE_TILE,
     BANK14_GUARD_SPEED_BY_BASE_TILE,
+    CEILING_LASER_HITBOX_H,
+    CEILING_LASER_HITBOX_W,
     CEILING_LASER_PROJECTILE_BANK,
     CEILING_LASER_PROJECTILE_TILES,
+    OBJECT72_LASER_HITBOX_H,
+    OBJECT72_LASER_HITBOX_W,
     STATE1E_PROJECTILE_BANK,
     STATE1E_PROJECTILE_LEFT_TILE,
     STATE1E_PROJECTILE_RIGHT_TILE,
@@ -41,7 +45,7 @@ from .semantics import (
 )
 from .sound import SOUND_ENEMY_DEATH, SOUND_FALLING_BAG_DROP, SOUND_FIRE, SOUND_HURT, SOUND_NO_AMMO, SOUND_SCORE_1000
 
-from secret_agent_editor.constants import LEVEL_H, LEVEL_W, TILE
+from openagent.game_assets.constants import LEVEL_H, LEVEL_W, TILE
 
 
 class CombatMixin:
@@ -109,13 +113,13 @@ class CombatMixin:
             return False
         p = self.player
         if enemy.kind == "ceiling_laser":
-            # SAM1:0x9A48..0x9A78 checks player X inside actor_x-16..actor_x+16
-            # and player_y below the crawler before spawning object 0x00C7.
+            # SAM1:0x9A48..0x9A78 compares the player origin fields
+            # DS:34EE/34F0 directly against actor_x +/- 0x10 and actor_y.
+            # This is not a centre-to-centre test: it is strict
+            # actor_x-16 < player_x < actor_x+16 and player_y > actor_y.
             if not self.rect_in_active_viewport(enemy.x, enemy.y, TILE, TILE):
                 return False
-            player_center_x = p.x + PLAYER_W / 2
-            actor_center_x = enemy.x + TILE / 2
-            return abs(player_center_x - actor_center_x) < TILE and p.y > enemy.y
+            return (enemy.x - TILE) < p.x < (enemy.x + TILE) and p.y > enemy.y
         if enemy.kind == "state24_up_laser":
             # SAM1:0xA1B3..0xA226: compare player_center_x against
             # actor_x-4..actor_x+4 and require the player to be above the emitter.
@@ -176,7 +180,10 @@ class CombatMixin:
             # the player is below its column.  The decoded laser object uses
             # bank 2 tiles 13..15; it travels downward from the crawler.
             start_x = enemy.x
-            start_y = enemy.y + TILE
+            # SAM1:0x9A91..0x9AA6 pushes actor_y + 8 to helper 0x5784.
+            # The previous +16 spawn made the laser appear one half-tile low
+            # and could delay/avoid close player hits.
+            start_y = enemy.y + 8
             self.entities.projectiles.append(
                 Projectile(
                     start_x,
@@ -191,6 +198,16 @@ class CombatMixin:
                     dy_px=8,
                     anim_tiles=CEILING_LASER_PROJECTILE_TILES,
                     owner="enemy",
+                    # Pass 96 correction: state 0x89 routes this same 10x16
+                    # rectangle through generic helper 0x53C4.  It is narrow
+                    # hurt, not direct hard death; keep the beam actor alive
+                    # after contact just like the ASM dispatcher does.
+                    narrow_hurt_on_hit=True,
+                    keep_on_player_hit=True,
+                    hit_w=CEILING_LASER_HITBOX_W,
+                    hit_h=CEILING_LASER_HITBOX_H,
+                    impact_visible_on_solid=False,
+                    impact_ticks_on_solid=2,
                 )
             )
             self.play_sound(SOUND_FIRE)
@@ -210,6 +227,15 @@ class CombatMixin:
                     dy_px=-8,
                     anim_tiles=STATE24_UP_LASER_PROJECTILE_TILES,
                     owner="enemy",
+                    # Helper 0x5784 maps object 0x72 to state 0x25.  Unlike
+                    # state 0x89, this branch performs the direct hard-death
+                    # 10x16 rectangle test at SAM1:0xA656..0xA70C.
+                    hard_death_on_hit=True,
+                    keep_on_player_hit=True,
+                    hit_w=OBJECT72_LASER_HITBOX_W,
+                    hit_h=OBJECT72_LASER_HITBOX_H,
+                    impact_visible_on_solid=False,
+                    impact_ticks_on_solid=2,
                 )
             )
             self.play_sound(SOUND_FIRE)
@@ -365,8 +391,8 @@ class CombatMixin:
                 continue
             if shot.life_ticks > 0:
                 shot.life_ticks -= 1
-                if shot.hostile and self.hurt_flash <= 0 and self.projectile_hits_player_rect(shot.x, shot.y, TILE, TILE):
-                    self.hurt_player()
+                if shot.hostile and self.hostile_projectile_hits_player(shot):
+                    self.apply_hostile_projectile_hit(shot)
                 if shot.life_ticks > 0:
                     kept.append(shot)
                 continue
@@ -380,14 +406,21 @@ class CombatMixin:
             if tile_x < 0 or tile_y < 0 or tile_x >= LEVEL_W or tile_y >= LEVEL_H:
                 continue
             if self.cell_blocks_body(tile_x, tile_y):
-                self.begin_projectile_impact(shot)
+                self.begin_projectile_impact(
+                    shot,
+                    visible=shot.impact_visible_on_solid,
+                    ticks=shot.impact_ticks_on_solid,
+                )
                 kept.append(shot)
                 continue
             if shot.hostile:
-                if self.projectile_hits_player(shot, old_x, old_y):
-                    self.hurt_player()
-                    # Hostile projectiles are consumed by the player hit.  Do
-                    # not draw the wall-impact spark on the player body.
+                if self.hostile_projectile_hits_player(shot, old_x, old_y):
+                    self.apply_hostile_projectile_hit(shot)
+                    # Generic enemy shots are consumed by a player hit, but
+                    # object-0x72 laser states keep their actor slot/live beam
+                    # after the player-contact branch.
+                    if shot.keep_on_player_hit:
+                        kept.append(shot)
                     continue
                 kept.append(shot)
                 continue
@@ -448,12 +481,48 @@ class CombatMixin:
             p.y + PLAYER_H - 1,
         )
 
+    def hostile_projectile_hits_player(self, shot: Projectile, old_x: float | None = None, old_y: float | None = None) -> bool:
+        if shot.hard_death_on_hit or shot.narrow_hurt_on_hit:
+            # Object-0x72 laser states do not use the normal point/segment
+            # bullet test.  SAM1:0xA660..0xA6F0 compares the laser's 10x16
+            # rectangle against the player's origin rectangle
+            # DS:34EE..+9 / DS:34F0..+15.  The previous implementation reused
+            # the full player sprite rect, making vertical beams hit too early
+            # at the player's right/bottom visual edges.
+            if shot.narrow_hurt_on_hit and self.hurt_flash > 0:
+                return False
+            return self.projectile_hits_player_origin_rect(shot.x, shot.y, shot.hit_w, shot.hit_h)
+        if shot.life_ticks > 0:
+            return self.hurt_flash <= 0 and self.projectile_hits_player_rect(shot.x, shot.y, TILE, TILE)
+        return self.hurt_flash <= 0 and self.projectile_hits_player(shot, old_x, old_y)
+
+    def apply_hostile_projectile_hit(self, shot: Projectile) -> None:
+        if shot.hard_death_on_hit:
+            self.kill_player()
+        else:
+            self.hurt_player()
+
     def projectile_hits_player_rect(self, x: float, y: float, w: int, h: int) -> bool:
         p = self.player
         return not (
             p.x + PLAYER_W - 1 < x
             or p.x > x + w - 1
             or p.y + PLAYER_H - 1 < y
+            or p.y > y + h - 1
+        )
+
+    def projectile_hits_player_origin_rect(self, x: float, y: float, w: int, h: int) -> bool:
+        """Return the laser-state overlap used by object-0x72 branches.
+
+        This intentionally matches the 10x16 player-origin rectangle used by
+        helper/state code such as SAM1:0xA660..0xA6F0, not the full decoded
+        player sprite footprint.
+        """
+        p = self.player
+        return not (
+            p.x + 9 < x
+            or p.x > x + w - 1
+            or p.y + 15 < y
             or p.y > y + h - 1
         )
 
@@ -476,6 +545,25 @@ class CombatMixin:
             if left <= x <= right and top <= y <= bottom:
                 return True
         return False
+
+
+    def contact_hazard_53c4_overlaps_player(self, x: float, y: float) -> bool:
+        """Return the narrow player overlap used by EXE helper 0x53C4.
+
+        The helper compares two small rectangles: the player origin spans
+        ``DS:34EE..+9`` and ``DS:34F0..+15``; the hazard point passed by the
+        actor branch spans the same 10x16 box.  It then enters the generic
+        hurt/death helper, so callers should use ``hurt_player()`` rather than
+        unconditional hard death unless their surrounding branch sets DS:69F5
+        directly.
+        """
+        p = self.player
+        return not (
+            p.x + 9 < x
+            or p.x > x + 9
+            or p.y + 15 < y
+            or p.y > y + 15
+        )
 
     def enemy_overlaps_player(self, enemy: Enemy) -> bool:
         p = self.player

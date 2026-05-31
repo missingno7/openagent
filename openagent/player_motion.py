@@ -8,6 +8,7 @@ from .game_constants import (
     PLAYER_STEP_RAMP,
     PLAYER_TERMINAL_STEP_BASE,
     PLAYER_VERTICAL_STEP_TABLE,
+    PLAYER_DEATH_BOUNCE_STEP_TABLE,
 )
 
 
@@ -45,3 +46,20 @@ def advance_fall_tick(counter: int) -> tuple[int, int]:
     """Mirror SAM1:0xB8B3 counter increment, cap, and table lookup."""
     counter = min(FALL_COUNTER_MAX, counter + 1)
     return counter, PLAYER_VERTICAL_STEP_TABLE[counter]
+
+
+def advance_death_bounce_tick(timer: int) -> tuple[int, bool, int]:
+    """Advance the DS:69F5/DS:69F6 hard-death bounce path.
+
+    Returns ``(new_timer, still_active, signed_step)``.  The caller should apply
+    the step exactly like SAM1:0x1ABC..0x1AC0: ``player_y -= signed_step``.
+    Positive values move the player upward and negative values move him down.
+    When the decremented timer reaches zero the EXE calls the level restart path
+    before applying another displacement.
+    """
+    timer = max(0, int(timer) - 1)
+    if timer <= 0:
+        return 0, False, 0
+    if timer >= len(PLAYER_DEATH_BOUNCE_STEP_TABLE):
+        return timer, True, 0
+    return timer, True, PLAYER_DEATH_BOUNCE_STEP_TABLE[timer]

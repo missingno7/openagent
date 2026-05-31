@@ -42,7 +42,7 @@ def main() -> int:
         problems.append('Pass logs still in docs root: ' + ', '.join(rel(p) for p in pass_logs_in_root[:10]))
 
     syntax_errors: list[str] = []
-    for package in (ROOT / 'openagent', ROOT / 'secret_agent_editor'):
+    for package in (ROOT / 'openagent',):
         for py in package.rglob('*.py'):
             try:
                 ast.parse(py.read_text(encoding='utf-8'), filename=str(py))

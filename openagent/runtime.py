@@ -35,60 +35,28 @@ from .animation import (
     satellite_tile,
     multi_tile_actor_refs,
     state2b_actor_refs,
-    state2b_tile,
     state2c_tile,
     state17_landmine_tile,
     teleporter_top_tile,
     teleporter_pad_tile,
     teleport_warp_tile,
 )
-from .collision import PLAYER_COLLISION_BOTTOM, PLAYER_DRAW_H, PLAYER_DRAW_W, player_body_probes
+from .collision import PLAYER_COLLISION_BOTTOM, player_body_probes
 from .hud import HUDMixin, STATUS_BAR_H
-from .entities import BeamTrap, Explosion, LevelEntities, MovingPlatform, Projectile, ScorePopup, extract_level_entities, Enemy, PushableBarrel
+from .entities import BeamTrap, Explosion, LevelEntities, MovingPlatform, ScorePopup, extract_level_entities, Enemy, PushableBarrel
 from .exe_actor_mechanics import (
-    BANK14_GUARD_BEHAVIOUR_BY_BASE_TILE,
-    BANK14_GUARD_SHOOT_TIMER_RANGE_BY_BASE_TILE,
-    BANK14_GUARD_SPEED_BY_BASE_TILE,
     deterministic_range,
-    object_id_is_shootable,
     spike_frame_for_timer,
     spike_is_dangerous,
     BEAM_CYCLE_TICKS,
     beam_phase_for_timer,
     beam_is_dangerous,
     SPIKE_CYCLE_TICKS,
-    STATIONARY_SHOOTER_PROJECTILE,
-    STATIONARY_SHOOTER_SPAWN_X_OFFSET,
-    CEILING_LASER_PROJECTILE_BANK,
-    CEILING_LASER_PROJECTILE_TILES,
-    STATE27_PROJECTILE_BANK,
-    STATE27_PROJECTILE_RIGHT_TILE,
-    STATE27_PROJECTILE_LEFT_TILE,
-    STATE27_OPEN_HELMET_SCORE,
-    STATE1E_SHOOTER_CODE,
-    STATE1F_SHOOTER_CODE,
-    STATE1E_PROJECTILE_BANK,
-    STATE1E_PROJECTILE_RIGHT_TILE,
-    STATE1E_PROJECTILE_LEFT_TILE,
-    STATE1F_PROJECTILE_BANK,
-    STATE1F_PROJECTILE_RIGHT_TILE,
-    STATE1F_PROJECTILE_LEFT_TILE,
     STATE1E_FIRE_COOLDOWN_TICKS,
-    STATE23_CONTACT_BOMB_CODE,
-    STATE23_CONTACT_BOMB_SCORE,
-    STATE23_SHRAPNEL_BANK,
-    STATE23_SHRAPNEL_RIGHT_TILE,
-    STATE23_SHRAPNEL_LEFT_TILE,
-    STATE24_UP_LASER_CODE,
-    STATE24_UP_LASER_PROJECTILE_BANK,
-    STATE24_UP_LASER_PROJECTILE_TILES,
-    STATE2B_ANIM_CODE,
     STATE2B_ANIM_PERIOD,
-    STATE2C_ANIM_PERIOD,
     STATE2C_CONTACT_HAZARD_CODE,
     STATE29_MONEY_BAG_IDLE_OBJECT_ID,
     STATE29_MONEY_BAG_FALLING_OBJECT_ID,
-    STATE29_MONEY_BAG_SCORE,
     STATE29_MONEY_BAG_FALL_STEP_PX,
     STATE17_LANDMINE_CODE,
     STATE17_LANDMINE_IDLE_OBJECT_ID,
@@ -96,26 +64,20 @@ from .exe_actor_mechanics import (
     STATE17_LANDMINE_DAMAGE_FRAME,
 )
 from .exe_runtime_collision import runtime_cell_writes_for_code
-from .level_model import build_runtime_collision_grid, cells_at, codes_at, iter_map_cells
-from .loader import Campaign, ensure_editor_importable, load_campaign
+from .level_model import build_runtime_collision_grid, cells_at, iter_map_cells
+from .loader import Campaign, load_campaign
 from .player import Player
-from .player_motion import advance_fall_tick, advance_jump_tick, horizontal_step_for_hold_ticks
+from .player_motion import advance_death_bounce_tick, advance_fall_tick, advance_jump_tick, horizontal_step_for_hold_ticks
 from .player_lifecycle import PlayerLifecycleMixin
 from .combat import CombatMixin
 from .overworld import OverworldMixin
 from .semantics import (
     ACTIVE_HIDDEN_PLATFORM_COLLISION_CODE,
-    BANK14_GUARD_CODE_BY_BASE_TILE,
     BANK14_RIP_PICKUP_SCORE,
-    BANK14_RIP_SHOT_SCORE,
-    BANK14_RIP_TILE,
-    GLASSES_CODE,
     HIDDEN_PLATFORM_CODE,
     LASER_FIELD_CODE,
     LASER_COMPUTER_CODE,
     FLOPPY_DISK_CODE,
-    DYNAMITE_CODE,
-    EXIT_DOOR_CODE,
     TELEPORTER_CODE,
     MISSION_PLAYER_START_CODE,
     SPEED_BONUS_CODE,
@@ -123,48 +85,35 @@ from .semantics import (
     is_collectible_code,
     is_door_code,
     is_exit_door_code,
+    DYNAMIC_MISSION_CODES,
     is_dynamic_mission_code,
-    is_mission_code_body_solid,
-    is_mission_code_floor_solid,
-    is_one_way_platform_code,
     mission_code_kind,
     score_popup_tile_for_value,
     score_value_for_code,
-    STATIONARY_SHOOTER_CODES,
-    PUSHABLE_BARREL_CODE,
 )
 from .sound import (
-    SOUND_ENEMY_DEATH,
     SOUND_EXIT_DYNAMITE,
-    SOUND_FALLING_BAG_DROP,
     SOUND_JUMP,
-    SOUND_FIRE,
-    SOUND_HURT,
     SOUND_NO_AMMO,
-    SOUND_PLAYER_DEATH,
     SOUND_PICKUP,
     SOUND_SCORE_1000,
     SOUND_TELEPORT,
     SoundPlayer,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
-ensure_editor_importable(ROOT)
+from openagent.game_assets.constants import LEVEL_H, LEVEL_W, TILE
+from openagent.game_assets.render import SecretAgentRenderer
 
-from secret_agent_editor.constants import LEVEL_H, LEVEL_W, ROW_BYTES, TILE
-from secret_agent_editor.render import SecretAgentRenderer
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 from .game_constants import (
-    ACTIVE_VIEW_H,
-    ACTIVE_VIEW_W,
     DEFAULT_ZOOM,
     DOS_TICK_HZ,
     FALL_COUNTER_MAX,
     GAME_VIEW_H,
     GAME_VIEW_W,
-    GROUND_EPSILON,
-    HUD_H,
     JUMP_ASCENT_END_COUNTER,
     MAX_AMMO,
     MAX_ZOOM,
@@ -175,6 +124,7 @@ from .game_constants import (
     PLAYER_W,
     PLAYER_SPEED_BONUS_STEP,
     PLAYER_SPEED_BONUS_TOTAL_TICKS,
+    PLAYER_DEATH_TIMER_INITIAL,
     STARTING_AMMO,
     WORLD_MOVE_SPEED,
 )
@@ -202,8 +152,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.canvas_h = GAME_VIEW_H * self.zoom
         self.level_image: Image.Image | None = None
         self.foreground_image: Image.Image | None = None
-        self.level_photo: ImageTk.PhotoImage | None = None
         self.frame_photo: ImageTk.PhotoImage | None = None
+        # Keep one persistent Tk canvas image item.  Recreating canvas items every
+        # frame is surprisingly expensive at high zoom because Tk has to allocate,
+        # map and redraw a large image item after every delete("all").
+        self._frame_canvas_item: int | None = None
+        self._frame_photo_size: tuple[int, int] | None = None
         self.entities = LevelEntities([], [], [], [], [], [], [], [], [])
         self._ignore_barrel_collision: PushableBarrel | None = None
         self._ignore_barrel_collision_ticks = 0
@@ -223,6 +177,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # hazards skip that helper and set the death flag directly.
         self.lives = 3
         self.player_dead_timer = 0
+        # Mirrors DS:69F6 for the separate DS:69F5 hard-death/bounce path.
+        # Kept as an integer tick countdown instead of seconds.
         self.player_death_frame_counter = 0
         self.has_glasses = False
         self.has_floppy_disk = False
@@ -239,6 +195,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.teleport_warped = False
         self.teleport_release_cell: tuple[int, int, str] | None = None
         self._teleporter_cells_cache: list | None = None
+        self._water_cells_cache: list | None = None
         self._laser_computer_last_warn_key: tuple[int, int, int, str] | None = None
         self._laser_field_source_keys_cache: set[tuple[int, int, int, str]] | None = None
         self._dynamic_source_keys_cache: set[tuple[int, int, int, str]] | None = None
@@ -253,6 +210,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._collision_grid_cache_key = None
         self.anim_ticks = 0
         self._level_image_phase: int | None = None
+        self._force_next_draw = True
         self.last_tick = time.perf_counter()
         self.sound = SoundPlayer.from_campaign(campaign, self.episode_number)
 
@@ -352,8 +310,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
 
 
     def on_canvas_configure(self, event: tk.Event) -> None:
-        self.canvas_w = max(1, int(event.width))
-        self.canvas_h = max(1, int(event.height))
+        new_w = max(1, int(event.width))
+        new_h = max(1, int(event.height))
+        if (new_w, new_h) != (self.canvas_w, self.canvas_h):
+            self.canvas_w = new_w
+            self.canvas_h = new_h
+            self._force_next_draw = True
 
     def on_ctrl_mousewheel(self, event: tk.Event) -> None:
         self.change_zoom(1 if event.delta > 0 else -1)
@@ -430,6 +392,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._level_image_phase = None
         self.foreground_image = None
         self._teleporter_cells_cache = None
+        self._water_cells_cache = None
+        self._force_next_draw = True
         self.render_level_image_for_phase(self.current_tile_anim_tick())
 
     def current_tile_anim_tick(self) -> int:
@@ -454,7 +418,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             # marker sprite baked into the static background; otherwise moving
             # platforms/enemies and the player are drawn twice. Runtime-removed
             # pickups/doors are skipped by exact visual cell identity.
-            skip_codes = {code for code in range(256) if is_dynamic_mission_code(code)}
+            skip_codes = set(DYNAMIC_MISSION_CODES)
             # Raw 0x60 water is not a normal actor slot, but its translated
             # runtime visual 0x01F3 has a special draw-time two-cel branch in
             # the EXE.  Do not bake the raw static sprite into either cached
@@ -558,29 +522,76 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
 
     def tick(self) -> None:
         self._render_frame_id += 1
+        before_render_key = self.render_state_key()
         now = time.perf_counter()
         dt = min(now - self.last_tick, 1 / 20)
         self.last_tick = now
-        if self.player_dead_timer > 0:
-            # DS:69F5/DS:69F6 death state keeps the actor draw path alive while
-            # the countdown runs; the original alternates the player death cels
-            # instead of freezing the whole game on the last normal frame.
-            self.player_death_frame_counter += 1
-            self.player_dead_timer -= 1
-            if self.player_dead_timer <= 0:
-                self.respawn_after_death()
-        elif not self.is_world_map:
+        if self.is_world_map:
+            self.update_world_player(dt)
+        else:
+            # The original game does not freeze actors/world animation while
+            # DS:69F5 death state is active.  It only gates player controls and
+            # runs the separate DS:69F6 table-driven player arc until the level
+            # restart call fires.
+            self.update_entities(dt)
             self.update_barrel_overlap_state()
             self.update_exit_door_blasts()
-        if self.player_dead_timer <= 0:
-            if self.is_world_map:
-                self.update_world_player(dt)
+            if self.player_dead_timer > 0:
+                self.update_player_death(dt)
             else:
-                self.update_entities(dt)
                 self.update_player(dt)
                 self.update_player_interactions(dt)
-        self.draw()
+        after_render_key = self.render_state_key()
+        if self.visual_interpolation_enabled or self._force_next_draw or after_render_key != before_render_key:
+            self._force_next_draw = False
+            self.draw()
         self.root.after(16, self.tick)
+
+    def render_state_key(self) -> tuple:
+        """Cheap key for frames that would be visually identical without interpolation.
+
+        The game simulation is fixed to the DOS timer, while Tk calls tick() near
+        60 Hz.  When visual interpolation is off, redrawing the same 320x200
+        framebuffer two extra times between DOS ticks only burns CPU, and the
+        cost grows quadratically with zoom because the Tk image is larger.
+        """
+        p = self.player
+        return (
+            self.level_index,
+            self.episode_number,
+            self.is_world_map,
+            int(p.x * 100),
+            int(p.y * 100),
+            p.facing,
+            p.anim_state,
+            p.walk_counter,
+            bool(p.fire_pose_active),
+            self.anim_ticks,
+            self.current_tile_anim_tick(),
+            self.player_dead_timer,
+            self.player_death_frame_counter,
+            self.teleport_active,
+            self.teleport_timer_ticks,
+            self.teleport_warped,
+            int(self.hurt_flash * DOS_TICK_HZ),
+            self.score,
+            self.ammo,
+            self.lives,
+            len(self.collected_cells),
+            len(self.opened_doors),
+            len(self.opened_exit_doors),
+            len(self.entities.projectiles),
+            len(self.entities.explosions),
+            len(self.entities.score_popups),
+            self.has_glasses,
+            self.has_floppy_disk,
+            self.has_dynamite,
+            self.laser_field_deactivated,
+            self.show_codes,
+            self.show_unknown,
+            self.zoom,
+            self.viewport_size(),
+        )
 
     def reset_teleport_state(self) -> None:
         self.teleport_active = False
@@ -593,7 +604,13 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             info = self.episode.levels[self.level_index]
             self._teleporter_cells_cache = [cell for cell in iter_map_cells(info) if cell.code == TELEPORTER_CODE]
             self._teleporter_cells_cache.sort(key=lambda cell: (cell.y, cell.x, cell.layer))
-        return list(self._teleporter_cells_cache)
+        return self._teleporter_cells_cache
+
+    def water_cells(self):
+        if self._water_cells_cache is None:
+            info = self.episode.levels[self.level_index]
+            self._water_cells_cache = [cell for cell in iter_map_cells(info) if cell.code == WATER_CODE]
+        return self._water_cells_cache
 
     def mission_player_body_clear_at(self, x: float, y: float) -> bool:
         old_x, old_y = self.player.x, self.player.y
@@ -762,6 +779,27 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.move_world_axis(0.0, (down - up) * WORLD_MOVE_SPEED * dt)
         self.check_teleporter_touch()
         self.last_world_position = (p.x, p.y)
+
+
+    def update_player_death(self, dt: float) -> None:
+        """Advance the ASM DS:69F5/DS:69F6 hard-death animation path."""
+        self._logic_accum = min(self._logic_accum + dt, 0.15)
+        while self.player_dead_timer > 0 and self._logic_accum >= 1.0 / DOS_TICK_HZ:
+            self._logic_accum -= 1.0 / DOS_TICK_HZ
+            self.snapshot_player_render_position()
+            timer, active, signed_step = advance_death_bounce_tick(self.player_dead_timer)
+            self.player_dead_timer = timer
+            self.player_death_frame_counter += 1
+            if active:
+                # SAM1:0x1ABC..0x1AC0: word step is signed and then subtracted
+                # from DS:34F0.  Positive values move up, negative values move
+                # down.  This path deliberately ignores normal collision.
+                self.player.y -= signed_step
+                self.player.x = min(max(self.player.x, 0), LEVEL_W * TILE - PLAYER_W)
+                self.player.y = min(max(self.player.y, 16), LEVEL_H * TILE - PLAYER_H)
+            else:
+                self.respawn_after_death()
+                break
 
     def update_player(self, dt: float) -> None:
         # Keep the mission player on DOS-like fixed ticks.  The previous
@@ -1067,7 +1105,11 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 enemy.frame_counter += 2 if enemy.code == STATE2C_CONTACT_HAZARD_CODE else 1
                 if enemy.frame_counter > 0x13:
                     enemy.frame_counter = 1
-                if enemy.code == STATE2C_CONTACT_HAZARD_CODE and self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                if (
+                    enemy.code == STATE2C_CONTACT_HAZARD_CODE
+                    and self.contact_hazard_53c4_overlaps_player(enemy.x, enemy.y)
+                    and self.hurt_flash <= 0
+                ):
                     self.hurt_player()
                 continue
             if enemy.kind == "state27_shooter":
@@ -1263,7 +1305,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 # Helper 0x53C4 is invoked unconditionally by state 0x06 after
                 # the movement/collision probe, which matches a contact hazard
                 # rather than a passive decorative walker.
-                if self.enemy_overlaps_player(enemy) and self.hurt_flash <= 0:
+                if self.contact_hazard_53c4_overlaps_player(enemy.x, enemy.y) and self.hurt_flash <= 0:
                     self.hurt_player()
                 continue
             if enemy.kind == "state23_contact_bomb":
@@ -1282,10 +1324,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 enemy.alert_ticks -= 1
             if enemy.kind == "ceiling_laser" and enemy.can_shoot:
                 # SAM1:0x9A25 increments DS:34DA.  At DS:34DA == DS:34D8 it
-                # tests whether the player is in the 32px-wide column below the
-                # crawler.  If the test fails, SAM1:0x9AB2 decrements the timer
-                # back to period-1, so the shooter remains armed and fires on
-                # the first valid tick after the player walks underneath.
+                # tests whether the player origin is inside actor_x +/- 16 and
+                # below the crawler.  If the test fails, SAM1:0x9AB2 decrements
+                # the timer back to period-1, so the shooter remains armed and
+                # fires on the first valid tick after the player walks underneath.
                 period = max(1, enemy.shoot_interval_ticks)
                 enemy.shoot_timer_ticks = min(enemy.shoot_timer_ticks + 1, period)
                 if enemy.shoot_timer_ticks >= period:
@@ -1294,6 +1336,11 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                         enemy.shoot_timer_ticks = 0
                     else:
                         enemy.shoot_timer_ticks = period - 1
+                # The same state-0x21 branch immediately calls helper 0x53C4
+                # with (actor_x, actor_y), so touching the crawler body causes
+                # generic player damage even when no laser was emitted.
+                if self.contact_hazard_53c4_overlaps_player(enemy.x, enemy.y) and self.hurt_flash <= 0:
+                    self.hurt_player()
                 continue
             if enemy.can_shoot:
                 if self.enemy_can_see_player(enemy):
@@ -1566,22 +1613,25 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # runtime collision grid, otherwise enemy projectiles can immediately
         # collide with their own map marker and some actors behave as invisible
         # static walls.
-        removed = set(self.dynamic_source_keys()) | set(self.collected_cells) | set(self.opened_doors) | set(self.opened_exit_doors)
+        removed = set(self.dynamic_source_keys())
+        removed.update(self.collected_cells)
+        removed.update(self.opened_doors)
+        removed.update(self.opened_exit_doors)
         if self.laser_field_deactivated:
             removed |= self.laser_field_source_keys()
         return removed
 
-    def dynamic_source_keys(self) -> set[tuple[int, int, int, str]]:
+    def dynamic_source_keys(self) -> frozenset[tuple[int, int, int, str]]:
         if self.is_world_map:
-            return set()
+            return frozenset()
         if self._dynamic_source_keys_cache is None:
             info = self.episode.levels[self.level_index]
-            self._dynamic_source_keys_cache = {
+            self._dynamic_source_keys_cache = frozenset(
                 self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
                 for cell in iter_map_cells(info)
                 if is_dynamic_mission_code(cell.code)
-            }
-        return set(self._dynamic_source_keys_cache)
+            )
+        return self._dynamic_source_keys_cache
 
     def laser_field_visible(self) -> bool:
         # Runtime cA 0x025B is one of the EXE's globally blink-redrawn cells.
@@ -1589,17 +1639,17 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # a close visual cadence in this runtime.
         return (self.anim_ticks // 4) % 2 == 0
 
-    def laser_field_source_keys(self) -> set[tuple[int, int, int, str]]:
+    def laser_field_source_keys(self) -> frozenset[tuple[int, int, int, str]]:
         if self.is_world_map:
-            return set()
+            return frozenset()
         if self._laser_field_source_keys_cache is None:
             info = self.episode.levels[self.level_index]
-            self._laser_field_source_keys_cache = {
+            self._laser_field_source_keys_cache = frozenset(
                 self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
                 for cell in iter_map_cells(info)
                 if cell.code == LASER_FIELD_CODE
-            }
-        return set(self._laser_field_source_keys_cache)
+            )
+        return self._laser_field_source_keys_cache
 
     def runtime_collision_grid(self):
         info = self.episode.levels[self.level_index]
@@ -1607,7 +1657,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         overrides = {HIDDEN_PLATFORM_CODE: ACTIVE_HIDDEN_PLATFORM_COLLISION_CODE} if self.has_glasses else {}
         cache_key = (self.level_index, removed, tuple(sorted(overrides.items())))
         if self._collision_grid_cache_key != cache_key:
-            self._collision_grid_cache = build_runtime_collision_grid(info, removed_source_keys=set(removed), code_collision_overrides=overrides)
+            self._collision_grid_cache = build_runtime_collision_grid(info, removed_source_keys=removed, code_collision_overrides=overrides)
             self._collision_grid_cache_key = cache_key
         return self._collision_grid_cache
 
@@ -2302,11 +2352,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         cam_x, cam_y = self.camera((player_rx, player_ry))
         view_w, screen_h = self.viewport_size()
         world_h = max(1, screen_h - STATUS_BAR_H)
-        world_frame = self.level_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + world_h)).convert("RGBA")
+        world_frame = self.level_image.crop((cam_x, cam_y, cam_x + view_w, cam_y + world_h))
         frame = Image.new("RGBA", (view_w, screen_h), (0, 0, 0, 255))
-        frame.alpha_composite(world_frame, (0, 0))
+        frame.paste(world_frame, (0, 0))
         self.draw_fast_animated_tiles(frame, cam_x, cam_y)
-        draw = ImageDraw.Draw(frame)
 
         px = int(player_rx - cam_x)
         py = int(player_ry - cam_y)
@@ -2332,14 +2381,21 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.draw_status_bar(frame, view_w, screen_h)
 
         scaled_frame = frame.resize((view_w * self.zoom, screen_h * self.zoom), Image.Resampling.NEAREST) if self.zoom != 1 else frame
-        out_w = max(self.canvas_w, scaled_frame.width)
-        out_h = max(self.canvas_h, scaled_frame.height)
-        out = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 255))
-        out.alpha_composite(scaled_frame, (0, 0))
 
-        self.frame_photo = ImageTk.PhotoImage(out)
-        self.canvas.delete("all")
-        self.canvas.create_image(0, 0, image=self.frame_photo, anchor="nw")
+        # The canvas itself already has a black background, so there is no need
+        # to allocate a second padded RGBA image just to cover unused space after
+        # resizing.  Reuse the Tk image when the zoomed size is unchanged;
+        # otherwise Tk spends most of the frame creating/configuring canvas
+        # image objects instead of drawing the DOS framebuffer.
+        if self.frame_photo is None or self._frame_photo_size != scaled_frame.size:
+            self.frame_photo = ImageTk.PhotoImage(scaled_frame)
+            self._frame_photo_size = scaled_frame.size
+            if self._frame_canvas_item is None:
+                self._frame_canvas_item = self.canvas.create_image(0, 0, image=self.frame_photo, anchor="nw")
+            else:
+                self.canvas.itemconfigure(self._frame_canvas_item, image=self.frame_photo)
+        else:
+            self.frame_photo.paste(scaled_frame)
 
     def draw_teleporters(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
         if self.is_world_map:
@@ -2379,6 +2435,9 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
     def alpha_composite_clipped(frame: Image.Image, tile: Image.Image, px: int, py: int, view_w: int, world_h: int) -> None:
         if px <= -tile.width or py <= -tile.height or px >= view_w or py >= world_h:
             return
+        if 0 <= px and 0 <= py and px + tile.width <= view_w and py + tile.height <= world_h:
+            frame.alpha_composite(tile, (px, py))
+            return
         dst_x = max(0, px)
         dst_y = max(0, py)
         src_x = max(0, -px)
@@ -2397,32 +2456,19 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # water cadence while keeping gameplay collision unchanged.
         if self.is_world_map:
             return
-        info = self.episode.levels[self.level_index]
         water_tile_no = 48 if (self.anim_ticks & 1) == 0 else 0
         water_tile = self.episode.tiles16.get(4, water_tile_no)
         if water_tile is None:
             return
         view_w, screen_h = self.viewport_size()
         world_h = max(1, screen_h - STATUS_BAR_H)
-        for cell in iter_map_cells(info):
-            if cell.code != WATER_CODE:
-                continue
+        for cell in self.water_cells():
             key = self.runtime_cell_key(cell.x, cell.y, cell.code, cell.layer)
             if key in self.collected_cells or key in self.opened_doors or key in self.opened_exit_doors:
                 continue
             px = cell.x * TILE - cam_x
             py = cell.y * TILE - cam_y
-            if px <= -TILE or py <= -TILE or px >= view_w or py >= world_h:
-                continue
-            dst_x = max(0, px)
-            dst_y = max(0, py)
-            src_x = max(0, -px)
-            src_y = max(0, -py)
-            src_r = min(TILE, view_w - dst_x + src_x)
-            src_b = min(TILE, world_h - dst_y + src_y)
-            if src_r <= src_x or src_b <= src_y:
-                continue
-            frame.alpha_composite(water_tile.crop((src_x, src_y, src_r, src_b)), (dst_x, dst_y))
+            self.alpha_composite_clipped(frame, water_tile, px, py, view_w, world_h)
 
     def draw_world_player(self, frame: Image.Image, px: int, py: int) -> None:
         self.draw_player_sprite(frame, px, py, offset=(-2, -1))
@@ -2633,7 +2679,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 frame.alpha_composite(tile, (int(rx - cam_x + relx * TILE), int(ry - cam_y + rely * TILE)))
 
     def draw_code_sprite(self, frame: Image.Image, code: int, px: int, py: int) -> None:
-        from secret_agent_editor.mapping import TILE_MAP
+        from openagent.game_assets.mapping import TILE_MAP
 
         refs = TILE_MAP.get(code, [])
         for relx, rely, bank, tile_no in refs:
@@ -2644,10 +2690,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
 
 
 def default_source() -> Path:
-    for candidate in (ROOT / "game_data", ROOT / "game_data" / "game_data.zip", ROOT / "game_data.zip"):
+    for candidate in (PROJECT_ROOT / "game_data", PROJECT_ROOT / "game_data" / "game_data.zip", PROJECT_ROOT / "game_data.zip"):
         if candidate.exists():
             return candidate
-    return ROOT / "game_data"
+    return PROJECT_ROOT / "game_data"
 
 
 def main(argv: list[str] | None = None) -> int:

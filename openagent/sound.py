@@ -13,12 +13,9 @@ try:
 except ImportError:  # pragma: no cover - non-Windows fallback
     winsound = None
 
-from .loader import Campaign, ensure_editor_importable
+from .loader import Campaign
 
-ROOT = Path(__file__).resolve().parents[1]
-ensure_editor_importable(ROOT)
-
-from secret_agent_editor.crypto import decrypt_secret_agent
+from openagent.game_assets.crypto import decrypt_secret_agent
 
 
 # Gameplay sound IDs recovered from SAM1 call sites that push an ID and call

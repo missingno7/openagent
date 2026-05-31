@@ -53,15 +53,3 @@ BACKGROUND_MAP: Dict[int, TileRef] = {
     233:(11,32), 237:(11,36), 241:(11,40), 245:(11,44), 501:(1,0),
 }
 DEFAULT_BG = (6, 16)
-
-
-def describe_code(code: int, mapping: Dict[int, List[DrawRef]], bg_code: int) -> str:
-    if code in (0, 0x20):
-        return "empty"
-    if code in (0x35, 0x36, 0x37):
-        b, t = BACKGROUND_MAP.get(bg_code, DEFAULT_BG)
-        return f"bg-shadow tile bank={b} tile={t + (code - 0x34)}"
-    refs = mapping.get(code)
-    if not refs:
-        return "unmapped"
-    return ", ".join(f"{rx:+d},{ry:+d}:B{b}:T{t}" for rx, ry, b, t in refs)

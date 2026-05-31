@@ -21,7 +21,7 @@ listed here and in `docs/exe_mechanisms_summary.md`.
 Hard facts:
 
 - `SAM?01.GFX` contains 16 banks of 50 masked 16x16 EGA tiles.  The loader path
-  is proven by `secret_agent_editor`.
+  is proven by `openagent.game_assets`.
 - `SAM?02.GFX` contains three banks of 50 masked 8x8 sprites.
 - `SAM?03.GFX` is an encrypted level archive with 17 blocks per episode.  Block
   0 is the top-down island map, blocks 1..16 are side-view mission levels.

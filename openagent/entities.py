@@ -16,7 +16,6 @@ from .exe_actor_mechanics import (
     STATIONARY_SHOOTER_PROJECTILE,
     object_id_is_shootable,
     ACTOR_HP_BY_OBJECT_ID,
-    BEAM_VERTICAL_CODE,
     BEAM_HORIZONTAL_CODE,
     BEAM_PERIOD_TICKS,
     beam_initial_timer,
@@ -35,13 +34,10 @@ from .exe_actor_mechanics import (
     STATE23_CONTACT_BOMB_CODE,
     STATE24_UP_LASER_CODE,
     STATE2B_ANIM_CODE,
-    STATE2C_ANIM_CODES,
     STATE2B_ANIM_PERIOD,
     STATE2C_ANIM_PERIOD,
-    STATE29_MONEY_BAG_CODE,
     STATE29_MONEY_BAG_IDLE_OBJECT_ID,
     STATE06_CONTACT_FLOATER_CODE,
-    STATE17_LANDMINE_CODE,
     STATE17_LANDMINE_IDLE_OBJECT_ID,
     STATE17_LANDMINE_PERIOD,
     STATE17_LANDMINE_STATE,
@@ -51,7 +47,6 @@ from .semantics import (
     BANK14_GUARD_CODES,
     BANK14_GUARD_INFO,
     CEILING_SPIKE_CODE,
-    FLOOR_SPIKE_CODE,
     MOVING_PLATFORM_CODE,
     PUSHABLE_BARREL_CODE,
     RIDING_ENEMY_CODE,
@@ -66,8 +61,8 @@ from .semantics import (
     STATE17_LANDMINE_CODES,
 )
 
-from secret_agent_editor.constants import TILE
-from secret_agent_editor.levels import LevelInfo
+from openagent.game_assets.constants import TILE
+from openagent.game_assets.levels import LevelInfo
 
 
 # Per-code actor step values extracted from the EXE special actor table.
@@ -275,6 +270,19 @@ class Projectile:
     # shot without drawing the big wall spark.
     impact_visible: bool = True
     life_ticks: int = 0
+    # Some EXE projectile states use a narrow 10x16 actor rectangle rather
+    # than the normal point/segment bullet test.  State 0x89 (ceiling crawler
+    # beam) routes that rectangle through generic helper 0x53C4, while state
+    # 0x25 (object-0x72 up-laser) writes the hard-death fields directly.  In
+    # both cases the player side of the comparison is the 10x16 origin rect
+    # DS:34EE..+9 / DS:34F0..+15, not the full 16x20 decoded sprite.
+    hard_death_on_hit: bool = False
+    narrow_hurt_on_hit: bool = False
+    keep_on_player_hit: bool = False
+    hit_w: int = 1
+    hit_h: int = 1
+    impact_visible_on_solid: bool = True
+    impact_ticks_on_solid: int = 12
 
     @property
     def is_impact(self) -> bool:

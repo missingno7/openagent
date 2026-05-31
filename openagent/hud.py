@@ -50,8 +50,8 @@ class HUDMixin:
     """Drawing methods used by ``OpenAgentApp``.
 
     The mixin expects the app to expose ``episode``, ``score``, ``ammo``,
-    ``has_floppy_disk``, ``has_glasses``, ``owned_keys``, ``lives`` and
-    ``player_dead_timer``.  It deliberately does not mutate gameplay state.
+    ``has_floppy_disk``, ``has_dynamite``, ``owned_keys`` and
+    ``lives``.  It deliberately does not mutate gameplay state.
     """
 
     def hud_tile(self: "OpenAgentApp", bank: int, tile: int) -> Image.Image | None:
@@ -160,17 +160,21 @@ class HUDMixin:
         return x - start_x
 
     def draw_hud_icon(self: "OpenAgentApp", frame: Image.Image, x: int, y: int, kind: str) -> int:
-        # Status-bar icons are addressed as byte offsets from DS:6E32 in the
-        # ASM.  Since each headered SAM?02.GFX sprite is 0x28 bytes and the data
-        # begins at offset 3, these offsets map directly to sprite IDs in the
-        # HUD page.
+        # HUD/status sprites are addressed as byte offsets from DS:6E32 in the
+        # ASM routine at SAM1:0x181F1..0x1849E.  Each SAM?02.GFX cell is
+        # 0x28 bytes and the page has a 3-byte header, so offsets like
+        # +0x1E3 map to tile 12.  Keep these names tied to the actual fields
+        # the routine tests instead of generic guessed icons.
         icon_tiles = {
-            "life": (UI_HUD_PAGE, 11),
-            "ammo": (UI_HUD_PAGE, 12),
-            "speed": (UI_HUD_PAGE, 13),
-            "disk": (UI_HUD_PAGE, 17),
-            "key": (UI_HUD_PAGE, 18),
-            "glasses": (UI_HUD_PAGE, 21),
+            "ammo_left": (UI_HUD_PAGE, 12),       # drawn at status slot 0x0c
+            "ammo_right": (UI_HUD_PAGE, 10),      # drawn at status slot 0x0d
+            "life": (UI_HUD_PAGE, 11),            # drawn at slots 0x21..
+            "speed": (UI_HUD_PAGE, 13),           # DS:69A4 > 0, slot 0x14
+            "red_key": (UI_HUD_PAGE, 17),         # DS:69EA, slot 0x1b
+            "blue_key": (UI_HUD_PAGE, 18),        # DS:69EB, slot 0x1c
+            "green_key": (UI_HUD_PAGE, 19),       # DS:69E9, slot 0x1d
+            "dynamite": (UI_HUD_PAGE, 20),        # DS:69F4, slot 0x19
+            "floppy_disk": (UI_HUD_PAGE, 21),     # DS:69EC, slot 0x1e
         }
         bank_tile = icon_tiles.get(kind)
         if bank_tile is not None and self.hud_tile(*bank_tile) is not None:
@@ -183,10 +187,10 @@ class HUDMixin:
         if kind == "life":
             fill = (220, 80, 90, 255)
             pts = [(1, 1), (2, 0), (3, 1), (4, 0), (5, 1), (0, 2), (1, 2), (2, 2), (3, 2), (4, 2), (5, 2), (6, 2), (1, 3), (2, 3), (3, 3), (4, 3), (5, 3), (2, 4), (3, 4), (4, 4), (3, 5)]
-        elif kind == "key":
+        elif kind in {"key", "red_key", "blue_key", "green_key"}:
             fill = (230, 210, 80, 255)
             pts = [(0, 2), (1, 1), (2, 1), (3, 2), (2, 3), (1, 3), (3, 2), (4, 2), (5, 2), (5, 3), (6, 2)]
-        elif kind == "disk":
+        elif kind in {"disk", "floppy_disk"}:
             fill = (120, 140, 255, 255)
             pts = [(0, 0), (1, 0), (2, 0), (3, 0), (4, 0), (0, 1), (4, 1), (0, 2), (1, 2), (2, 2), (4, 2), (0, 3), (4, 3), (0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]
         elif kind == "glasses":
@@ -209,40 +213,52 @@ class HUDMixin:
         y = bar_y
         if getattr(self.episode, "tiles8", None) is not None:
             self.draw_hud_digit_string(frame, 0, y, f"{self.score % 1000000:06d}")
-            # ASM status routine places ammo digits directly in slots 0x0e and
-            # 0x0f; it does not draw an invented "A:" label.
-            self.draw_hud_digit_string(frame, 0x70, y, f"{max(0, min(HUD_AMMO_MAX, self.ammo)):02d}")
-            x = 0xD8
+
+            # Exact fixed status slots from SAM1:0x18331..0x183AB:
+            #   slot 0x0c -> DS:6E32+0x1E3 -> tile 12, ammo/gun icon left
+            #   slot 0x0d -> DS:6E32+0x193 -> tile 10, ammo/gun icon right
+            #   slot 0x0e -> tens digit, slot 0x0f -> ones digit
+            self.draw_hud_icon(frame, 0x0C * 8, y, "ammo_left")
+            self.draw_hud_icon(frame, 0x0D * 8, y, "ammo_right")
+            self.draw_hud_digit_string(frame, 0x0E * 8, y, f"{max(0, min(HUD_AMMO_MAX, self.ammo)):02d}")
+
+            # Fixed inventory/status slots from SAM1:0x183B0..0x1845F.
+            # The glasses/reveal object is not displayed here; the original HUD
+            # only checks speed, dynamite, three key flags and the floppy flag.
             if getattr(self.player, "speed_bonus_step", 0) > 0:
-                x += self.draw_hud_icon(frame, x, y, "speed")
+                self.draw_hud_icon(frame, 0x14 * 8, y, "speed")
+            if self.has_dynamite:
+                self.draw_hud_icon(frame, 0x19 * 8, y, "dynamite")
+            if 0x2D in self.owned_keys:
+                self.draw_hud_icon(frame, 0x1B * 8, y, "red_key")
+            if 0x2F in self.owned_keys:
+                self.draw_hud_icon(frame, 0x1C * 8, y, "blue_key")
+            if 0x2B in self.owned_keys:
+                self.draw_hud_icon(frame, 0x1D * 8, y, "green_key")
             if self.has_floppy_disk:
-                x += self.draw_hud_icon(frame, x, y, "disk")
-            if self.has_glasses:
-                x += self.draw_hud_icon(frame, x, y, "glasses")
-            for _key in sorted(self.owned_keys):
-                x += self.draw_hud_icon(frame, x, y, "key")
-            life_x = 0x100
-            for _ in range(max(0, self.lives)):
-                life_x += self.draw_hud_icon(frame, life_x, y, "life")
-            if self.player_dead_timer > 0:
-                self.draw_hud_digit_string(frame, view_w - 16, y, "00")
+                self.draw_hud_icon(frame, 0x1E * 8, y, "floppy_disk")
+
+            # Lives are drawn by looping AX=1..DS:6A40 and pushing AX+0x20 as
+            # the destination slot, so the first life is slot 0x21, not 0x20.
+            for life_no in range(1, max(0, self.lives) + 1):
+                self.draw_hud_icon(frame, (0x20 + life_no) * 8, y, "life")
             return
 
         # Fallback for stripped data sets without SAM?02.GFX.
         y += 1
         self.draw_hud_text(draw, 0, y, f"{self.score % 1000000:06d}", (120, 230, 160, 255))
         self.draw_hud_text(draw, 96, y, f"A:{max(0, min(HUD_AMMO_MAX, self.ammo)):02d}", (230, 170, 185, 255))
-        x = 194
         if getattr(self.player, "speed_bonus_step", 0) > 0:
-            x += self.draw_hud_icon_fallback(draw, x, y, "speed")
+            self.draw_hud_icon_fallback(draw, 0x14 * 8, y, "speed")
+        if self.has_dynamite:
+            self.draw_hud_icon_fallback(draw, 0x19 * 8, y, "dynamite")
+        if 0x2D in self.owned_keys:
+            self.draw_hud_icon_fallback(draw, 0x1B * 8, y, "red_key")
+        if 0x2F in self.owned_keys:
+            self.draw_hud_icon_fallback(draw, 0x1C * 8, y, "blue_key")
+        if 0x2B in self.owned_keys:
+            self.draw_hud_icon_fallback(draw, 0x1D * 8, y, "green_key")
         if self.has_floppy_disk:
-            x += self.draw_hud_icon_fallback(draw, x, y, "disk")
-        if self.has_glasses:
-            x += self.draw_hud_icon_fallback(draw, x, y, "glasses")
-        for _key in sorted(self.owned_keys):
-            x += self.draw_hud_icon_fallback(draw, x, y, "key")
-        life_x = max(120, min(view_w - 8 * max(0, self.lives), 244))
-        for _ in range(max(0, self.lives)):
-            life_x += self.draw_hud_icon_fallback(draw, life_x, y, "life")
-        if self.player_dead_timer > 0:
-            self.draw_hud_text(draw, view_w - 18, y, "00", (230, 80, 80, 255))
+            self.draw_hud_icon_fallback(draw, 0x1E * 8, y, "floppy_disk")
+        for life_no in range(1, max(0, self.lives) + 1):
+            self.draw_hud_icon_fallback(draw, (0x20 + life_no) * 8, y, "life")

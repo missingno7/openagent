@@ -49,6 +49,23 @@ PLAYER_VERTICAL_STEP_TABLE = (
     0,
     8, 8, 8, 4, 4, 2, 2, 2, 1, 1, 2, 2, 2, 4, 4, 8, 8, 8, 8,
 )
+
+# Separate DS:69F5/DS:69F6 hard-death/bounce path.  SAM1 initialises
+# DS:69F6 to 0x23, then each tick decrements it and reads a signed WORD from
+# [DS:69F6 + (timer << 1)] before doing ``player_y -= step``.  Positive
+# values therefore throw the player upward; negative values later pull him
+# downward.  Index 0 is never used for movement because the EXE resets the
+# level immediately when the decremented timer reaches zero.
+PLAYER_DEATH_TIMER_INITIAL = 0x23
+PLAYER_DEATH_BOUNCE_STEP_TABLE = (
+    0,
+    -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8, -8,
+    -6, -6, -6, -6, -6, -6,
+    -4, -4, -4, -4,
+    0, 0, 0,
+    4, 4,
+    8, 8, 8, 8, 8, 8, 8, 8,
+)
 GROUND_EPSILON = 0.35
 
 # SAM1 new-game/init path sets DS:6858 = 5 and ammo pickups clamp it to 0x63.

@@ -12,21 +12,19 @@ This cleanup pass makes the repository easier to navigate without changing gamep
 | `semantics.py` | Raw map-code categories and source-code meaning | Add raw-code classification here before touching runtime logic. |
 | `animation.py` | Player/enemy tile-frame mapping | Put frame ranges here, especially when verified from ASM. |
 | `player.py` | Player runtime dataclass/state fields | Keep state shape here; keep movement behavior in runtime or a future player system. |
-| `hud.py` | Status bar + 8×8 UI text renderer | Owns `SAM?02.GFX` page constants and fallback glyphs; no gameplay mutation. |
+| `hud.py` | Status bar + 8×8 UI text renderer | Owns `SAM?02.GFX` page constants, pass-93 fixed HUD slot map and fallback glyphs; no gameplay mutation. |
 | `sound.py` | `.SND` loading/playback and sound IDs | Keep ASM sound IDs here; avoid ad-hoc numbers in runtime. |
-| `sprites.py` | 16x16 and 8x8 sprite lookup helpers | HUD/menu graphics should flow through this layer, not hand-drawn masks. |
-| `level_model.py` | Runtime grid/cell helpers | Shared source of truth for map-cell iteration/collision grid input. |
+| `level_model.py` | Runtime grid/cell helpers | Shared source of truth for cached map-cell iteration, `cells_at()`, visual coverage, and collision-grid input. |
 | `exe_*` modules | Data extracted from ASM/disassembly | These should be small, factual, and cited in docs. |
 
-## Asset/editor layer: `secret_agent_editor/`
+## Game asset/data layer: `openagent/game_assets/`
 
 | File | Purpose |
 |---|---|
-| `graphics.py` | ProGraphx 16x16 and 8x8 decoders. Camoto cross-checks belong here. |
+| `graphics.py` | ProGraphx 16x16 and 8x8 decoders shared by runtime and HUD. |
 | `render.py` | Static level rendering from original map/tiles. |
 | `bundle.py` | Episode asset loading. |
-| `tile_animations.py` | Static animated tile mapping. |
-| `gui.py` | Editor UI; should not become gameplay source of truth. |
+| `tile_animations.py` | EXE/data-derived tile animation and background variant helpers. |
 
 ## Reverse-engineering layer
 
@@ -37,9 +35,15 @@ This cleanup pass makes the repository easier to navigate without changing gamep
 | `docs/passes/` | Chronological pass notes. Useful for audits, not for onboarding. |
 | `docs/derived_mechanics/` | JSON/CSV extracted facts used for implementation. |
 
+## Performance/cleanup status
+
+- `openagent/level_model.py` now caches map-cell/layout indexes on `LevelInfo`; tools that mutate raw level data should call `invalidate_level_model_cache(info)`.
+- `openagent/runtime.py` keeps one persistent Tk canvas image item and updates/reuses the `PhotoImage` where possible.
+- `docs/PERFORMANCE_NOTES.md` records the current hot paths and local benchmark notes.
+
 ## Recommended next refactors
 
-1. Continue splitting `openagent/runtime.py` by safe systems: next best targets are `projectiles.py`, `damage.py`, `interactions.py`, and `renderer.py`.
+1. Continue splitting `openagent/runtime.py` by safe systems: next best targets are `interactions.py`, `rendering.py`, and smaller actor-state modules.
 2. Replace remaining magic object IDs in runtime with names from `semantics.py`, `animation.py`, `sound.py`, or a new factual `object_ids.py`.
 3. Keep UI/HUD work tied to `SAM?02.GFX` and ASM pointer pages (`DS:6E36`, `DS:6E3A`, `DS:6E32`). Do not reintroduce PIL-drawn fake glyphs except as explicit fallback for missing data.
 4. When adding mechanics, update `docs/MECHANICS_INDEX.md` and add a short pass note under `docs/passes/`.

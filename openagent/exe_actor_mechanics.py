@@ -120,8 +120,20 @@ ACTOR_HP_BY_OBJECT_ID: dict[int, int] = {
 # laser projectile/beam family is bank 2 tiles 13..15 and travels downward
 # from the crawler when the player overlaps its column.
 CEILING_CRAWLER_CODE = 0x63
+# Helper 0x5784 is called with object 0x00C7 by raw 0x63/state 0x21.
+# The helper immediately rewrites it to object 0x0072/state 0x0089
+# (SAM1:0x599A..0x59C3).  Pass 96 correction: state 0x89 uses the
+# shared narrow rectangle, but then calls generic helper 0x53C4; the direct
+# hard-death rectangle belongs to ordinary object-0x72/state 0x25.
+CEILING_LASER_PROJECTILE_OBJECT_ID = 0x00C7
+CEILING_LASER_RUNTIME_OBJECT_ID = 0x0072
+CEILING_LASER_PROJECTILE_STATE = 0x0089
 CEILING_LASER_PROJECTILE_BANK = 2
 CEILING_LASER_PROJECTILE_TILES = (13, 14, 15)
+CEILING_LASER_HITBOX_W = 10
+CEILING_LASER_HITBOX_H = 16
+OBJECT72_LASER_HITBOX_W = 10
+OBJECT72_LASER_HITBOX_H = 16
 
 
 

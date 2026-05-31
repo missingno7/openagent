@@ -13,11 +13,10 @@ def main() -> int:
     ap.add_argument("--out", default="docs/derived_mechanics/pass20_tile_animation_correction.json")
     args = ap.parse_args()
     root = Path(args.root).resolve()
-    sys.path.insert(0, str(root / "secret_agent_editor"))
     sys.path.insert(0, str(root))
 
-    from secret_agent_editor.mapping import TILE_MAP, BACKGROUND_MAP
-    from secret_agent_editor.tile_animations import ANIMATED_TILES
+    from openagent.game_assets.mapping import TILE_MAP, BACKGROUND_MAP
+    from openagent.game_assets.tile_animations import ANIMATED_TILES
     from openagent.exe_runtime_collision import RUNTIME_CELL_WRITES
 
     # Find map codes that draw the animated bank/tile refs.

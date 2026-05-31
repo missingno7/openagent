@@ -32,12 +32,12 @@ The extracted report is in:
 
 Added:
 
-- `secret_agent_editor/secret_agent_editor/tile_animations.py`
+- `openagent/game_assets/tile_animations.py`
 - `tools/extract_sa_tile_animation_mechanics.py`
 
 Changed:
 
-- `secret_agent_editor/secret_agent_editor/render.py`
+- `openagent/game_assets/render.py`
   - accepts `bg_frame`
   - renders the level background as `first_tile + bg_frame`
   - renders `0x35/0x36/0x37` as phase-shifted variants inside the same four-tile block
