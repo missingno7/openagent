@@ -48,3 +48,18 @@ The pass files are still kept verbatim under `docs/passes/`.
 
 - Pass 96: Re-opened object-`0x72` projectile states; corrected state `0x89` to narrow generic `0x53C4` hurt, moved direct hard-death policy to object `0x72/state 0x25`, and made object-`0x72` solid impacts invisible instead of drawing the generic wall spark.
 - Pass 97: Rechecked object-`0x72` laser overlap against `SAM1:0xA660..0xA6F0`; narrow laser states now compare against the player's 10x16 origin rectangle instead of the full decoded sprite footprint.
+- Pass 98: Re-audited level-0 overworld movement at `SAM1:0xBAF5..0xBC0A` and collision helper `SAM1:0xB7D9..0xB8B0`; replaced visual `WORLD_BLOCKED_CODES` with the runtime `+0x1CC` body-byte test, the 10x16 player-origin rectangle, and fixed 4 px/tick vertical movement.
+
+- Pass 99: Re-opened the level-0 map-token parser at `SAM1:0x10811` / `CS:0x2E20`; added a dedicated world collision table so raw `0x55` and `0x61` block on the overworld while mission levels keep using the mission parser table.
+
+- Pass 100: Re-audited level-0 overworld movement/camera at `SAM1:0xBAF5..0xBC0A` and `SAM1:0x2059..0x209F`; movement now checks attempted offsets before writing position, preserves right/left/down/up processing order, removes sprite-bound pre-clamping, and uses reconstructed `DS:6838/683A` world scroll registers instead of the generic centered camera.
+
+- Pass 101: Re-audited level-0 player draw/entry behavior; aligned world sprite origin with DS:34EE/34F0, enabled DS:3500/34F6 walking/turning animation, added automatic 0x4D/0x4E/0x4F/0x50 house entry, and redraws completed houses with bank-1 checked cels 16..19.
+- Pass 102: Fixed level-0 raw 0x59 start marker being drawn under the live player, changed completed-house replay gating to use player-origin entry/release, and made hard-death restart use the full mission reset state instead of restoring the decremented lives value.
+
+- Pass 103: Fixed render interpolation hitching by snapshotting before every fixed tick, avoiding player-snapshot collapse on actor-only ticks, adding a small clamped presentation lookahead, using nearest-pixel snapping, interpolating the level-0 world camera/player render state, and correcting the main-loop `dt` clamp/pacing so late high-zoom frames can catch up by at least one DOS tick.
+
+- Pass 104: Simplified render interpolation back to plain linear accumulator/tick alpha, interleaved mission actor/player fixed ticks through one simulation loop, and fixed moving-platform jitter by snapshotting the carried player and platform before the same DOS tick.
+
+- Pass 105: Re-audited the DS:69F5/69F6 death branch; death now freezes the mission camera and clamps the falling player to DS:683A+0xB8. Pass 106 supersedes its platform-carry interpretation.
+- Pass 106: Re-audited death/platform ordering; the DS:69F5 branch runs before actor updates, and the moving-platform actor branch has no DS:69F5 guard, so platforms can catch and carry the death animation with the narrow actor_x..+9 / player_x..+9, player_y+0x10 contact test.

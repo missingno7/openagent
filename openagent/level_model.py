@@ -155,8 +155,13 @@ def build_runtime_collision_grid(
     *,
     removed_source_keys: set[tuple[int, int, int, str]] | frozenset[tuple[int, int, int, str]] | None = None,
     code_collision_overrides: dict[int, int] | None = None,
+    world_map: bool = False,
 ) -> dict[tuple[int, int], RuntimeCollisionCell]:
     """Replay the EXE-derived map-token -> runtime-cell writes.
+
+    Level 0 / overworld uses a different EXE token parser from mission maps.
+    Pass ``world_map=True`` for level 0; otherwise raw codes such as 0x55 use
+    mission semantics and collide incorrectly.
 
     The original map loader does not decide collision from the visual TILE_MAP
     footprint.  It calls a runtime-cell setter for each token.  The setter stores
@@ -168,7 +173,10 @@ def build_runtime_collision_grid(
     marker to the setter, which takes the EXE's visual-only branch and does not
     update +0x1CC/+0x1CD collision flags.
     """
-    from .exe_runtime_collision import runtime_cell_writes_for_code
+    if world_map:
+        from .exe_world_collision import world_runtime_cell_writes_for_code as runtime_cell_writes_for_code
+    else:
+        from .exe_runtime_collision import runtime_cell_writes_for_code
 
     removed_source_keys = removed_source_keys or frozenset()
     code_collision_overrides = code_collision_overrides or {}

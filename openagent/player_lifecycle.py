@@ -36,6 +36,9 @@ class PlayerLifecycleMixin:
         # current life before the level/player is restarted.
         if self.player_dead_timer > 0:
             return
+        capture_death_camera = getattr(self, "capture_death_camera", None)
+        if callable(capture_death_camera):
+            capture_death_camera()
         self.lives = max(0, self.lives - 1)
         self.player_dead_timer = PLAYER_DEATH_TIMER_INITIAL
         self.player_death_frame_counter = 0
@@ -56,22 +59,22 @@ class PlayerLifecycleMixin:
     def respawn_after_death(self) -> None:
         # SAM1 calls the restart/transition helper when DS:69F6 reaches zero.
         # The original flow rebuilds the mission instead of merely dropping the
-        # player back onto the existing mutated map, so reset runtime level
-        # state (actors, collected cells, opened doors, temporary inventory) and
-        # then put the player at the mission start.  The game-over/menu path is
-        # not rebuilt yet; if lives reaches zero, refill it to keep playtesting
-        # possible.
-        remaining_lives = self.lives
-        score = self.score
-        if remaining_lives <= 0:
-            remaining_lives = 3
+        # player back onto the existing mutated map.  Keep that as a full
+        # per-level reset: actors, collected cells, opened doors, temporary
+        # inventory, ammo and DS:6A40 health/lives are restored by
+        # ``load_level(reset_player=True)``.  Earlier ports re-applied the
+        # decremented life counter after the reset, which made water/laser
+        # deaths permanently remove one HUD point from the restarted level.
         self.player_dead_timer = 0
         self.player_death_frame_counter = 0
         self.hurt_flash = 0.0
+        clear_death_camera = getattr(self, "clear_death_camera", None)
+        if callable(clear_death_camera):
+            clear_death_camera()
         self.load_level(reset_player=True)
-        self.lives = remaining_lives
-        self.score = score
         self.player_dead_timer = 0
         self.player_death_frame_counter = 0
         self.hurt_flash = 0.0
+        if callable(clear_death_camera):
+            clear_death_camera()
         self._force_next_draw = True

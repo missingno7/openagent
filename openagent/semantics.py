@@ -10,15 +10,12 @@ from .exe_runtime_collision import (
 
 
 WORLD_PLAYER_CODE = 0x59
-WORLD_ENTRANCE_CODES = frozenset({0x4D, 0x4F, 0x50})
+WORLD_ENTRANCE_CODES = frozenset({0x4D, 0x4E, 0x4F, 0x50})
 MISSION_PLAYER_START_CODE = 0x59
 
-# World-map codes use a different table from mission levels. Grass/path tiles
-# are deliberately omitted: they are walkable on the island map.
-WORLD_WATER_CODES = frozenset({0x55})
-WORLD_COAST_CODES = frozenset({0x56, 0x57, 0x58, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68})
-WORLD_TREE_CODES = frozenset({0x42, 0x43, 0x44, 0x45, 0x46, 0x47})
-WORLD_BLOCKED_CODES = frozenset({0x00, 0x20}) | WORLD_WATER_CODES | WORLD_COAST_CODES | WORLD_TREE_CODES
+# World-map codes use a different table from mission levels.  Do not infer
+# overworld collision from visual raw-code families: pass 98 traces movement to
+# the runtime collision byte +0x1CC, sampled at the 10x16 player-origin rect.
 MOVING_PLATFORM_CODE = 0x62
 ROTATING_SATELLITE_CODE = 0x23
 PUSHABLE_BARREL_CODE = 0xA7

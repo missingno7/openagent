@@ -7,9 +7,10 @@ This is the quick orientation table. Detailed evidence remains in `docs/passes/`
 | Player movement | EXE-style horizontal step ramp including raw `0x4E` speed bonus, normal `6EC1/34EA/34AF` jump/fall table, exact static fall probes, fire pose timing, dynamic-platform crossing landing | `openagent/player_motion.py`, `openagent/runtime.py`, `openagent/animation.py`, pass 9/12/80-86/90 notes |
 | Player ammo | Starts at 5, pickup +5, capped to 99 | pass 65 |
 | Player damage | Generic hurt decrements lives; hard hazards enter death state | pass 55, pass 62, pass 63 |
-| Player death | `DS:69F5/69F6` hard-death countdown uses signed table arc: player pops upward, falls down, actors/world keep updating, then current mission state is reset | pass 57, pass 62, pass 92 |
+| Player death | `DS:69F5/69F6` hard-death countdown uses signed table arc: player pops upward, falls down against frozen camera bottom `DS:683A+0xB8`; actor updates continue afterward, so moving platforms can still catch/carry the death sprite through their actor contact branch; then current mission state is fully reset including health/lives | pass 57, pass 62, pass 92, pass 102, pass 105-106 |
 | HUD/status bar | 320x200 framebuffer bottom 8 px, `SAM?02.GFX` HUD page 2; score, ammo icon/digits, speed, dynamite, color keys, floppy item and lives use fixed ASM slots | pass 58-61, pass 70, pass 72, pass 93 |
 | Menu/table text | 8x8 text renderer prototype using `SAM?02.GFX` pages 0/1 | pass 70 |
+| Overworld level 0 | Top-down movement on DOS ticks with ASM flag order, offset-before-write collision, reconstructed `DS:6838/683A` camera registers, dedicated level-0 `CS:0x2E20` parser table, aligned player origin/draw, DS:3500/34F6 walking animation, raw 0x59 marker suppression, origin-based automatic house entry/re-entry, and checked-house completion redraw; exact entrance mapping still prototype | pass 77-78, pass 98-102 |
 | Teleporter `0x77` | Paired mission/world teleporter; mission trigger uses ASM +/-2 px alignment, destination release gate, live bank10 28/29 idle and 36..39 warp effect | pass 51, pass 53, pass 88 |
 | Laser field `0x82` + computer `0x83` | Computer disables active lasers; laser is hard-death hazard | pass 41, pass 55 |
 | Water `0x60` | Runtime visual `0x01F3`; live two-frame render overlay; hard-death on touch | pass 20, pass 23, pass 85, pass 87 |

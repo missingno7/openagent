@@ -40,8 +40,8 @@ It is intentionally concise: use it to find the current source of truth quickly.
 ### Player death lifecycle
 - State fields: `DS:69F5`, `DS:69F6`, lives `DS:6A40`
 - Status: `asm_partial`
-- Evidence: pass 55, pass 57, pass 62, pass 63, pass 92
-- Confirmed: `DS:69F6=0x23` drives a signed table arc through `SAM1:0x1A61..0x1AE8`; positive entries throw the player upward, negative entries make him fall, and world/actor updates should not freeze.
+- Evidence: pass 55, pass 57, pass 62, pass 63, pass 92, pass 105
+- Confirmed: `DS:69F6=0x23` drives a signed table arc through `SAM1:0x1A61..0x1AE8`; positive entries throw the player upward, negative entries make him fall, Y is clamped to `0x10..DS:683A+0xB8`, world/actor updates should not freeze, and pass 106 corrects the platform detail: actor updates continue after the death branch, and moving-platform carry has no `DS:69F5` guard, so it can catch the death sprite.
 - Current gaps: exact `0x520:0x011A` restart helper semantics for score/ammo/inventory persistence and game-over/menu flow.
 
 ### Normal mission player movement
@@ -80,10 +80,11 @@ It is intentionally concise: use it to find the current source of truth quickly.
 - Current gaps: frame counts and frame sources should be data-driven, not guessed.
 
 ### Overworld and table popups
-- Status: `heuristic` / `data_verified` split
-- Evidence: pass 70 identifies UI pages; pass 77 isolates overworld logic and records level-0 data facts.
-- Data facts: level 0 is the island map; raw `0x59` is the single player marker; `0x4D/0x4F/0x50` total exactly 16 entrance candidates per episode.
-- Current gaps: collision table, entrance-to-level mapping, completion flags, original windows/popups.
+- Status: `asm_partial` / `data_verified` split
+- Evidence: pass 70 identifies UI pages; pass 77 isolates overworld logic and records level-0 data facts; pass 98 traces the top-down movement/collision path; pass 99 splits level-0 `CS:0x2E20` collision parsing from mission parsing; pass 100 reconstructs the world-map scroll registers and direction-processing order; pass 101 aligns player draw/animation and implements automatic house entry/completion cels; pass 102 skips the static 0x59 marker, keeps checked houses re-enterable via origin-based entry/release, and fixes full death reset.
+- Data facts: level 0 is the island map; raw `0x59` is the single player marker; `0x4D/0x4E/0x4F/0x50` form 16 entrance anchors per episode, with adjacent `0x4D/0x4E` counted as one wide building.
+- Confirmed: when `DS:681C == 1`, movement uses the `SAM1:0xBAF5..0xBC0A` top-down branch; it processes direction flags right, left, down, up, checks the attempted offset before writing position, and mutates `DS:6838/683A` with fixed margins instead of using a centered camera. Collision helper `SAM1:0xB7D9..0xB8B0` samples runtime body byte `+0x1CC` at player-origin rectangle `x+3/x+12`, `y/y+15`, ignoring `+0x1CD`. Level 0 builds those bytes from the `CS:0x2E20` world parser, not the mission parser; raw `0x55` and `0x61` are body-solid there, while `0x30` is body-clear. The level-0 draw path uses DS:34EE/34F0 directly with DS:3500/34F6 player animation state, raw 0x59 is suppressed from static rendering, completed house cels use the neighbouring bank-1 16..19 family, and checked houses remain active entrances after the player origin leaves and re-enters the footprint.
+- Current gaps: exact entrance-to-level mapping, original windows/popups, persistent completion/progression flags, and coordinate-specific DOSBox comparison for any remaining choke points.
 
 ## Rule for future passes
 
@@ -96,7 +97,8 @@ Every future pass should either:
 
 ## Overworld level-0 data audit
 
-- Status: `data_verified` for raw marker inventory only; gameplay remains `heuristic`.
-- Evidence: `tools/audit_overworld_data.py`, `docs/registry/overworld_level0_inventory.json`, pass 78.
-- Confirmed raw facts: one `0x59` player marker per episode and sixteen `0x4D/0x4F/0x50` entrance markers per episode.
-- Not yet ASM evidence: movement collision, entrance-to-level mapping, completed-level flags, popup/table behavior.
+- Status: `data_verified` for raw marker inventory; `asm_partial` for movement/collision/camera/draw/entry after pass 102.
+- Evidence: `tools/audit_overworld_data.py`, `docs/registry/overworld_level0_inventory.json`, pass 78, pass 98, pass 99, pass 100, pass 101, pass 102.
+- Confirmed raw facts: one `0x59` player marker per episode and sixteen entrance anchors per episode; `0x4D/0x4E` is one wide building footprint, `0x4F/0x50` are single-cell markers.
+- Confirmed ASM behavior: top-down movement uses runtime `+0x1CC` body-byte probes, level 0 uses its own `CS:0x2E20` map-token table to populate those bytes, world scrolling follows the reconstructed `DS:6838/683A` threshold/clamp logic, player draw/turning uses the DS:3500/34F6 animation family at the same origin used by collision, raw 0x59 is treated as a marker only, and completed houses remain enterable after origin-based release.
+- Not yet ASM evidence: entrance-to-level mapping, completed-level flags, popup/table behavior, coordinate-specific verification for any remaining map choke points.

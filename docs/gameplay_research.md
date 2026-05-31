@@ -60,13 +60,16 @@ Known world-map codes:
 | --- | --- |
 | `0x59` | player icon, bank 13 tile 0 |
 | `0x4D`, `0x4F`, `0x50` | entrance candidates; 16 per episode |
-| `0x55` | water |
-| `0x56..0x68` selected coastline codes | blocked coast/edge pieces in current model |
-| `0x42..0x47` | trees/forest, blocked |
+| `0x55` | water-looking world tile; passability depends on runtime `+0x1CC` |
+| `0x56..0x68` selected coastline/world terrain codes | visual terrain; do not treat as a collision class by raw byte alone |
+| `0x42..0x47` | tree/forest-looking world terrain; only runtime body-solid cells block |
 
-Current world-map collision is still a smaller derived model: grass/path is
-passable; water, coast and trees block.  The original EXE world-map collision
-and entrance table remain open research targets.
+World-map collision is now traced to the ASM top-down helper: the player uses a
+10x16 origin rectangle (`x+3/x+12`, `y/y+15`) and samples runtime body byte
+`+0x1CC` only.  It is not a visual raw-code table; many water/coast/tree-looking
+raw codes are passable unless their runtime cell write sets `+0x1CC`.  Entrance
+mapping, completion flags, popups and exact camera clamping remain open research
+targets.
 
 ## Mission Codes
 
@@ -115,7 +118,7 @@ source for Secret Agent-specific map codes, collision, actors or pickup logic.
 
 ## Next Research Targets
 
-1. Original world-map movement constraints and entrance mapping.
+1. Original world-map entrance mapping, completion flags, popups and camera clamp.
 2. Remaining `+0x1CA` interaction branches: doors, exits, teleporters, toggles
    and non-score pickups.
 3. Exact update branches for special actors that are currently represented by

@@ -86,6 +86,7 @@ from .semantics import (
     is_door_code,
     is_exit_door_code,
     DYNAMIC_MISSION_CODES,
+    WORLD_PLAYER_CODE,
     is_dynamic_mission_code,
     mission_code_kind,
     score_popup_tile_for_value,
@@ -126,7 +127,6 @@ from .game_constants import (
     PLAYER_SPEED_BONUS_TOTAL_TICKS,
     PLAYER_DEATH_TIMER_INITIAL,
     STARTING_AMMO,
-    WORLD_MOVE_SPEED,
 )
 
 # Runtime object visuals that immediately route to the player-death branch in
@@ -143,6 +143,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.level_index = level
         self.player = Player()
         self.last_world_position: tuple[float, float] | None = None
+        self.completed_world_levels_by_episode: dict[int, set[int]] = {}
+        self.world_entry_release_level: int | None = None
+        # Reconstructed DS:6838/683A world-map camera registers.  Mission
+        # camera still uses the generic helper below.
+        self.world_camera_x = 0
+        self.world_camera_y = 0
         self.keys: set[str] = set()
         self.collision_enabled = True
         self.show_codes = False
@@ -177,6 +183,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # hazards skip that helper and set the death flag directly.
         self.lives = 3
         self.player_dead_timer = 0
+        # Camera registers are not updated by the DS:69F5 hard-death branch.
+        # Store the mission camera at the moment the death state starts so the
+        # renderer keeps the same viewport while the table-driven arc plays.
+        self._death_camera: tuple[int, int] | None = None
         # Mirrors DS:69F6 for the separate DS:69F5 hard-death/bounce path.
         # Kept as an integer tick countdown instead of seconds.
         self.player_death_frame_counter = 0
@@ -203,9 +213,22 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._entity_accum = 0.0
         self.visual_interpolation_enabled = bool(visual_interpolation)
         self._render_frame_id = 0
-        self._player_render_snapshot_frame_id = -1
+        # Render interpolation keeps a previous simulation pose and the current
+        # fixed-tick pose.  Do not key this by Tk frame: if a slow UI frame has
+        # to catch up by running two DOS ticks, the previous pose must become
+        # the state before the *latest* fixed tick, not the state from the start
+        # of the UI frame.  Otherwise the renderer lerps across multiple DOS
+        # ticks at once and produces a visible hitch.
         self._prev_player_render_pos: tuple[float, float] = (self.player.x, self.player.y)
+        self._prev_world_camera: tuple[float, float] = (float(self.world_camera_x), float(self.world_camera_y))
         self._prev_entity_render_pos: dict[int, tuple[float, float]] = {}
+        self._last_render_dt = 1.0 / 60.0
+        # Number of fixed actor ticks in the current Tk callback that already
+        # captured the player's previous render pose. Actor slots can carry
+        # the player (moving platforms), so player interpolation must use the
+        # pose before the actor tick, not a later snapshot after the platform
+        # has already snapped the player to its new fixed-tick position.
+        self._pending_player_snapshot_ticks = 0
         self._collision_grid_cache = None
         self._collision_grid_cache_key = None
         self.anim_ticks = 0
@@ -298,6 +321,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             self.load_level(reset_player=False)
         elif key in {"i", "I"}:
             self.visual_interpolation_enabled = not self.visual_interpolation_enabled
+            self.reset_render_interpolation_state()
             self.update_window_title()
             self.draw()
         elif key in {"plus", "KP_Add", "equal"}:
@@ -339,6 +363,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
     def change_episode(self, delta: int) -> None:
         self.episode_index = (self.episode_index + delta) % len(self.episode_numbers)
         self.level_index = min(self.level_index, self.level_count - 1)
+        self.last_world_position = None
+        self.world_entry_release_level = None
         self.sound.load_episode(self.campaign, self.episode_number)
         self.load_level(reset_player=True)
 
@@ -348,6 +374,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
 
     def load_level(self, *, reset_player: bool) -> None:
         self.teleport_release_cell = None
+        self._death_camera = None
         self.entities = LevelEntities([], [], [], [], [], [], [], [], []) if self.is_world_map else extract_level_entities(self.episode.levels[self.level_index])
         self._ignore_barrel_collision = None
         self._ignore_barrel_collision_ticks = 0
@@ -360,6 +387,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             self.ammo = STARTING_AMMO
             self.lives = 3
             self.player_dead_timer = 0
+            self._death_camera = None
             self.hurt_flash = 0.0
             self.has_glasses = False
             self.has_floppy_disk = False
@@ -377,6 +405,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 self.reset_teleport_state()
                 spawn = self.last_world_position or self.find_world_spawn()
                 self.player = Player(spawn[0], spawn[1])
+                self.init_world_camera_from_player()
             else:
                 self.player = Player(*self.find_spawn())
         # Re-render after gameplay state has been reset.  This matters for
@@ -444,6 +473,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             return any(write.cA for write in runtime_cell_writes_for_code(code))
 
         if self.is_world_map:
+            # Raw 0x59 is the island-map player start marker.  It is a
+            # runtime spawn token, not a static world sprite; otherwise the
+            # marker remains baked into the map and the live player is drawn
+            # a second time after moving away.
+            skip_codes.add(WORLD_PLAYER_CODE)
+            skip_cells = set(self.completed_world_entrance_source_keys())
             self.foreground_image = None
             self.level_image = renderer.render(
                 self.level_index,
@@ -454,6 +489,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 skip_cells=skip_cells,
                 anim_tick=anim_tick,
             )
+            self.draw_completed_world_entrance_overlays()
         else:
             self.level_image = renderer.render(
                 self.level_index,
@@ -521,31 +557,41 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             yield cell.x, cell.y, cell.code
 
     def tick(self) -> None:
+        frame_start = time.perf_counter()
         self._render_frame_id += 1
+        self._pending_player_snapshot_ticks = 0
         before_render_key = self.render_state_key()
-        now = time.perf_counter()
-        dt = min(now - self.last_tick, 1 / 20)
+        now = frame_start
+        raw_dt = max(0.0, now - self.last_tick)
         self.last_tick = now
+        self._last_render_dt = raw_dt
+
+        # DOS_TICK_HZ is about 18.2065 Hz, i.e. one tick is roughly 54.9 ms.
+        # The previous 1/20s clamp was only 50 ms, smaller than a real DOS
+        # tick.  A late Tk callback at high zoom could therefore feed the fixed
+        # timestep less than one full tick, producing an apparent off-by-one
+        # hitch/slowdown instead of a normal catch-up update.  Clamp only very
+        # long stalls so the game does not spiral after dragging the window or
+        # hitting a breakpoint, but allow several genuine DOS ticks to catch up.
+        fixed_dt = 1.0 / DOS_TICK_HZ
+        dt = min(raw_dt, fixed_dt * 5.0)
+
         if self.is_world_map:
             self.update_world_player(dt)
         else:
-            # The original game does not freeze actors/world animation while
-            # DS:69F5 death state is active.  It only gates player controls and
-            # runs the separate DS:69F6 table-driven player arc until the level
-            # restart call fires.
-            self.update_entities(dt)
-            self.update_barrel_overlap_state()
-            self.update_exit_door_blasts()
-            if self.player_dead_timer > 0:
-                self.update_player_death(dt)
-            else:
-                self.update_player(dt)
-                self.update_player_interactions(dt)
+            self.update_mission_simulation(dt)
         after_render_key = self.render_state_key()
         if self.visual_interpolation_enabled or self._force_next_draw or after_render_key != before_render_key:
             self._force_next_draw = False
             self.draw()
-        self.root.after(16, self.tick)
+
+        # Schedule relative to the work already spent in this callback instead
+        # of blindly waiting another 16 ms.  This keeps the render cadence close
+        # to 60 Hz when drawing is cheap, and naturally drops frames rather than
+        # queueing stale callbacks when a large zoom makes PhotoImage upload slow.
+        frame_elapsed = time.perf_counter() - frame_start
+        delay_ms = max(1, int(round((1.0 / 60.0 - frame_elapsed) * 1000)))
+        self.root.after(delay_ms, self.tick)
 
     def render_state_key(self) -> tuple:
         """Cheap key for frames that would be visually identical without interpolation.
@@ -761,44 +807,93 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             self.player.fall_ticks = PLAYER_VERTICAL_COUNTER_INITIAL
             self.teleport_warped = True
             if self.is_world_map:
+                self.init_world_camera_from_player()
                 self.last_world_position = (self.player.x, self.player.y)
         if self.teleport_timer_ticks <= -0x13:
             self.reset_teleport_state()
         return True
 
-    def update_world_player(self, dt: float) -> None:
-        p = self.player
-        if self.update_teleport_tick():
-            self.last_world_position = (p.x, p.y)
-            return
-        left = any(k in self.keys for k in ("Left", "a", "A"))
-        right = any(k in self.keys for k in ("Right", "d", "D"))
-        up = any(k in self.keys for k in ("Up", "w", "W"))
-        down = any(k in self.keys for k in ("Down", "s", "S"))
-        self.move_world_axis((right - left) * WORLD_MOVE_SPEED * dt, 0.0)
-        self.move_world_axis(0.0, (down - up) * WORLD_MOVE_SPEED * dt)
-        self.check_teleporter_touch()
-        self.last_world_position = (p.x, p.y)
+    def update_mission_simulation(self, dt: float) -> None:
+        """Advance one or more complete mission DOS ticks.
 
+        Player and actor slots share one fixed presentation clock.  This matters
+        most for moving platforms: the platform actor can carry the player
+        before the player-control branch runs.  Snapshotting once before the
+        whole fixed tick gives both the carried player and the platform the same
+        linear ``previous -> current`` interval.
+        """
+        fixed_dt = 1.0 / DOS_TICK_HZ
+        self._logic_accum = min(self._logic_accum + dt, fixed_dt * 5.0)
+        # Keep the old entity accumulator as an alias for tools/debug helpers,
+        # but rendering now uses the single logic accumulator for all dynamic
+        # objects so actors and the player cannot drift by one presentation
+        # phase.
+        self._entity_accum = self._logic_accum
+
+        while self._logic_accum >= fixed_dt:
+            self._logic_accum -= fixed_dt
+            self._entity_accum = self._logic_accum
+
+            self.snapshot_dynamic_render_positions()
+            self.snapshot_player_render_position()
+
+            # The original game does not freeze actors/world animation while
+            # DS:69F5 death state is active.  The top-level player branch at
+            # SAM1:0x1A21 jumps into the death arc first, then continues to the
+            # actor update call at SAM1:0x1B5D.  That ordering matters for
+            # moving platforms: the platform branch can catch the freshly moved
+            # death sprite on the same DOS tick.
+            self.anim_ticks += 1
+
+            if self.player_dead_timer > 0:
+                self.update_player_death_tick()
+                if self.player_dead_timer <= 0:
+                    break
+                self.update_entities_tick()
+                self.update_barrel_overlap_state()
+                self.update_exit_door_blasts()
+            else:
+                self.update_entities_tick()
+                self.update_barrel_overlap_state()
+                self.update_exit_door_blasts()
+                self.update_player_tick()
+                self.update_player_interactions(fixed_dt)
+
+            self._entity_accum = self._logic_accum
+
+    def update_player_death_tick(self) -> None:
+        """Advance one fixed tick of the ASM DS:69F5/DS:69F6 death arc."""
+        timer, active, signed_step = advance_death_bounce_tick(self.player_dead_timer)
+        self.player_dead_timer = timer
+        self.player_death_frame_counter += 1
+        if active:
+            # SAM1:0x1ABC..0x1AC0: word step is signed and then subtracted
+            # from DS:34F0. Positive values move up, negative values move
+            # down. This path deliberately ignores normal collision.
+            self.player.y -= signed_step
+            self.player.x = min(max(self.player.x, 0), LEVEL_W * TILE - PLAYER_W)
+            # SAM1:0x1AC4..0x1AE5 clamps the death arc between absolute
+            # screen/top Y=0x10 and the current camera register DS:683A+0xB8.
+            # The death branch itself never advances the camera, so the player
+            # falls until he hits the bottom of the already visible playfield
+            # instead of dragging the viewport downward.
+            cam_y = self._death_camera[1] if self._death_camera is not None else self.camera((self.player.x, self.player.y))[1]
+            bottom_y = min(LEVEL_H * TILE - PLAYER_H, cam_y + 0xB8)
+            self.player.y = min(max(self.player.y, 0x10), bottom_y)
+        else:
+            self.respawn_after_death()
 
     def update_player_death(self, dt: float) -> None:
         """Advance the ASM DS:69F5/DS:69F6 hard-death animation path."""
-        self._logic_accum = min(self._logic_accum + dt, 0.15)
+        self._logic_accum = min(self._logic_accum + dt, (1.0 / DOS_TICK_HZ) * 5.0)
         while self.player_dead_timer > 0 and self._logic_accum >= 1.0 / DOS_TICK_HZ:
             self._logic_accum -= 1.0 / DOS_TICK_HZ
-            self.snapshot_player_render_position()
-            timer, active, signed_step = advance_death_bounce_tick(self.player_dead_timer)
-            self.player_dead_timer = timer
-            self.player_death_frame_counter += 1
-            if active:
-                # SAM1:0x1ABC..0x1AC0: word step is signed and then subtracted
-                # from DS:34F0.  Positive values move up, negative values move
-                # down.  This path deliberately ignores normal collision.
-                self.player.y -= signed_step
-                self.player.x = min(max(self.player.x, 0), LEVEL_W * TILE - PLAYER_W)
-                self.player.y = min(max(self.player.y, 16), LEVEL_H * TILE - PLAYER_H)
+            if self._pending_player_snapshot_ticks > 0:
+                self._pending_player_snapshot_ticks -= 1
             else:
-                self.respawn_after_death()
+                self.snapshot_player_render_position()
+            self.update_player_death_tick()
+            if self.player_dead_timer <= 0:
                 break
 
     def update_player(self, dt: float) -> None:
@@ -806,10 +901,13 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # continuous vy/gravity approximation could move by a fractional amount,
         # resolve by a while loop, then sample the same one-way tile again and
         # appear to fall through or freeze.
-        self._logic_accum = min(self._logic_accum + dt, 0.15)
+        self._logic_accum = min(self._logic_accum + dt, (1.0 / DOS_TICK_HZ) * 5.0)
         while self._logic_accum >= 1.0 / DOS_TICK_HZ:
             self._logic_accum -= 1.0 / DOS_TICK_HZ
-            self.snapshot_player_render_position()
+            if self._pending_player_snapshot_ticks > 0:
+                self._pending_player_snapshot_ticks -= 1
+            else:
+                self.snapshot_player_render_position()
             self.update_player_tick()
 
     def update_player_tick(self) -> None:
@@ -951,10 +1049,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # far too fast compared with the player, so keep them on the same DOS
         # tick clock.  Projectiles stay continuous for now because their EXE slot
         # update is still only partially mapped.
-        self._entity_accum = min(self._entity_accum + dt, 0.15)
+        self._entity_accum = min(self._entity_accum + dt, (1.0 / DOS_TICK_HZ) * 5.0)
         while self._entity_accum >= 1.0 / DOS_TICK_HZ:
             self._entity_accum -= 1.0 / DOS_TICK_HZ
             self.snapshot_dynamic_render_positions()
+            self.snapshot_player_render_position()
+            self._pending_player_snapshot_ticks += 1
             self.anim_ticks += 1
             self.update_entities_tick()
         # Projectile actors are normal EXE actor slots too. Advance them in
@@ -978,7 +1078,13 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 satellite.timer_ticks = 0
                 satellite.frame_index = (satellite.frame_index + 1) % 4
         for platform in self.entities.platforms:
-            carry_player = self.platform_below() is platform and self.player.grounded
+            # Moving-platform carry is in the actor branch around
+            # SAM1:0x7FA6..0x8105, not in the normal player-control branch.
+            # It does not test DS:69F5.  If the death arc has just moved the
+            # player into the platform's narrow top contact rectangle, the EXE
+            # still snaps DS:34F0 to actor_y-0x10 and carries DS:34EE by the
+            # actor's DS:34E6 step.
+            carry_player = self.platform_carry_contact_asm(platform)
             old_x = platform.x
             # Original actors use DS:34E6 as a literal per-tick pixel step.
             dx = platform.direction * platform.step_px
@@ -987,7 +1093,10 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 platform.x = old_x
                 platform.direction *= -1
             elif carry_player:
+                self.player.y = platform.y - PLAYER_H
                 self.player.x += platform.x - old_x
+                self.player.grounded = True
+                self.player.fall_ticks = PLAYER_VERTICAL_COUNTER_INITIAL
 
         for enemy in self.entities.enemies:
             enemy.anim_time += dt
@@ -1655,9 +1764,9 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         info = self.episode.levels[self.level_index]
         removed = frozenset(self.removed_runtime_source_keys())
         overrides = {HIDDEN_PLATFORM_CODE: ACTIVE_HIDDEN_PLATFORM_COLLISION_CODE} if self.has_glasses else {}
-        cache_key = (self.level_index, removed, tuple(sorted(overrides.items())))
+        cache_key = (self.level_index, self.is_world_map, removed, tuple(sorted(overrides.items())))
         if self._collision_grid_cache_key != cache_key:
-            self._collision_grid_cache = build_runtime_collision_grid(info, removed_source_keys=removed, code_collision_overrides=overrides)
+            self._collision_grid_cache = build_runtime_collision_grid(info, removed_source_keys=removed, code_collision_overrides=overrides, world_map=self.is_world_map)
             self._collision_grid_cache_key = cache_key
         return self._collision_grid_cache
 
@@ -1820,6 +1929,30 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             if horizontal and vertical:
                 candidates.append(float(other.y - TILE))
         return min(candidates) if candidates else None
+
+    def platform_carry_contact_asm(self, platform: MovingPlatform) -> bool:
+        """Return whether SAM1:0x7FA6..0x8105 would snap/carry the player.
+
+        The moving-platform actor branch compares a narrow 10px horizontal
+        rectangle for both actor and player (`actor_x..+9` vs `DS:34EE..+9`)
+        and requires the actor top to be below the player origin but no lower
+        than the player's `y+0x10` base.  Importantly, this path checks
+        `DS:6EC1` but not `DS:69F5`, which is why the original game can catch
+        and drag the death animation when the falling death sprite crosses a
+        platform top.
+        """
+        p = self.player
+        player_left = float(p.x)
+        player_right = player_left + 9.0
+        platform_left = float(platform.x)
+        platform_right = platform_left + 9.0
+        horizontal = not (player_right < platform_left or platform_right < player_left)
+        if not horizontal:
+            return False
+        player_top = float(p.y)
+        player_base = player_top + 0x10
+        platform_top = float(platform.y)
+        return player_base >= platform_top and platform_top > player_top
 
     def platform_below(self) -> MovingPlatform | None:
         p = self.player
@@ -2095,7 +2228,11 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         if self.level_exit_pending:
             return
         self.level_exit_pending = True
+        completed_level = self.level_index
         self.last_world_position = self.last_world_position or self.find_world_spawn()
+        if completed_level > 0:
+            self.completed_world_levels().add(completed_level)
+            self.world_entry_release_level = completed_level
         self.level_index = 0
         self.load_level(reset_player=True)
 
@@ -2273,25 +2410,25 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self.root.title("OpenAgent" + suffix)
 
     def reset_render_interpolation_state(self) -> None:
-        self._player_render_snapshot_frame_id = -1
         self._prev_player_render_pos = (self.player.x, self.player.y)
+        self._prev_world_camera = (float(self.world_camera_x), float(self.world_camera_y))
         self._prev_entity_render_pos = {}
+        self._last_render_dt = 1.0 / 60.0
         self.snapshot_dynamic_render_positions(force=True)
 
     def snapshot_player_render_position(self) -> None:
-        # Capture the state before the first fixed simulation mutation in this
-        # Tk frame.  Entity ticks may carry the player before update_player_tick
-        # runs, so do not overwrite that earlier pre-tick position.
-        if self._player_render_snapshot_frame_id == self._render_frame_id:
-            return
+        # Capture the state immediately before a fixed DOS tick mutates the
+        # player.  This intentionally has no per-Tk-frame guard: catch-up frames
+        # may run multiple fixed ticks, and each tick needs its own previous
+        # sample so the next draw only interpolates over one DOS tick.
         self._prev_player_render_pos = (self.player.x, self.player.y)
-        self._player_render_snapshot_frame_id = self._render_frame_id
 
     def snapshot_dynamic_render_positions(self, *, force: bool = False) -> None:
         # This is render-only state: it is never consulted by collision,
-        # projectiles, actor logic or interaction checks.
-        if not force:
-            self.snapshot_player_render_position()
+        # projectiles, actor logic or interaction checks.  Player snapshots are
+        # handled separately by routines that actually mutate the player;
+        # otherwise an actor-only tick could collapse an in-progress player lerp
+        # to current and cause a tiny visual snap.
         positions: dict[int, tuple[float, float]] = {}
         for collection in (
             self.entities.platforms,
@@ -2307,17 +2444,31 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         self._prev_entity_render_pos = positions
 
     def render_interpolation_alpha(self, accumulator: float) -> float:
-        if not self.visual_interpolation_enabled or self.is_world_map:
+        if not self.visual_interpolation_enabled:
             return 1.0
         tick_dt = 1.0 / DOS_TICK_HZ
+        # Keep this deliberately plain: the renderer presents the exact linear
+        # fraction between the last completed fixed DOS tick and the next one.
+        # A previous presentation offset tried to hide late Tk callbacks, but
+        # it made player/platform pairs phase differently and was most visible
+        # as stutter while riding moving platforms.
         return max(0.0, min(1.0, accumulator / tick_dt))
 
     @staticmethod
     def _lerp(a: float, b: float, t: float) -> float:
         return a + (b - a) * t
 
+    @staticmethod
+    def render_coord(value: float) -> int:
+        # Use nearest-pixel snapping for interpolated render positions.  The old
+        # int() floor biased every fractional step backwards, which creates an
+        # uneven 0,0,1,1,2 cadence when the DOS tick movement is spread over
+        # several Tk frames.  Rounding keeps the visual phase centered while all
+        # gameplay remains on integer/fixed-tick coordinates.
+        return int(math.floor(value + 0.5))
+
     def player_render_position(self) -> tuple[float, float]:
-        if not self.visual_interpolation_enabled or self.is_world_map:
+        if not self.visual_interpolation_enabled:
             return self.player.x, self.player.y
         alpha = self.render_interpolation_alpha(self._logic_accum)
         old_x, old_y = self._prev_player_render_pos
@@ -2329,10 +2480,40 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         old = self._prev_entity_render_pos.get(id(obj))
         if old is None:
             return float(obj.x), float(obj.y)
-        alpha = self.render_interpolation_alpha(self._entity_accum)
+        # Actor slots and the player are advanced on the same fixed DOS clock.
+        # Use the same presentation fraction for both; otherwise a carried
+        # player and the moving platform under him can drift by one render
+        # phase even when their fixed-tick positions are correct.
+        alpha = self.render_interpolation_alpha(self._logic_accum)
         return self._lerp(old[0], float(obj.x), alpha), self._lerp(old[1], float(obj.y), alpha)
 
+    def capture_death_camera(self) -> None:
+        # Called from PlayerLifecycleMixin.kill_player() before DS:69F5 is set.
+        # It snapshots the current mission viewport registers for the separate
+        # death-arc clamp and draw path.
+        if self.is_world_map:
+            self._death_camera = (int(self.world_camera_x), int(self.world_camera_y))
+        else:
+            self._death_camera = self.camera((self.player.x, self.player.y))
+
+    def clear_death_camera(self) -> None:
+        self._death_camera = None
+
     def camera(self, player_pos: tuple[float, float] | None = None) -> tuple[int, int]:
+        death_camera = getattr(self, "_death_camera", None)
+        if getattr(self, "player_dead_timer", 0) > 0 and death_camera is not None:
+            return death_camera
+        if self.is_world_map:
+            # Level 0 does not use the generic center-on-player camera.
+            # ``SAM1:0xBAF5`` mutates DS:6838/683A only when the player crosses
+            # fixed margins, and teleport arrival recenters those same
+            # registers.  Interpolate only the render copy of those registers;
+            # the gameplay/collision camera stays fixed-tick accurate.
+            if self.visual_interpolation_enabled:
+                alpha = self.render_interpolation_alpha(self._logic_accum)
+                old_x, old_y = self._prev_world_camera
+                return self.render_coord(self._lerp(old_x, self.world_camera_x, alpha)), self.render_coord(self._lerp(old_y, self.world_camera_y, alpha))
+            return int(self.world_camera_x), int(self.world_camera_y)
         px, py = player_pos if player_pos is not None else (self.player.x, self.player.y)
         view_w, screen_h = self.viewport_size()
         view_h = max(1, screen_h - STATUS_BAR_H)
@@ -2357,8 +2538,8 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         frame.paste(world_frame, (0, 0))
         self.draw_fast_animated_tiles(frame, cam_x, cam_y)
 
-        px = int(player_rx - cam_x)
-        py = int(player_ry - cam_y)
+        px = self.render_coord(player_rx - cam_x)
+        py = self.render_coord(player_ry - cam_y)
         if self.is_world_map:
             self.draw_world_player(frame, px, py)
             self.draw_world_entrance_numbers(frame, cam_x, cam_y)
@@ -2429,7 +2610,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
         # SAM1:0x21E4..0x2254 uses the player draw coordinates (DS:34EE/F0)
         # and draws the bank-10 effect over the player during both halves of
         # the DS:69E2 countdown.
-        frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+        frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
 
     @staticmethod
     def alpha_composite_clipped(frame: Image.Image, tile: Image.Image, px: int, py: int, view_w: int, world_h: int) -> None:
@@ -2471,11 +2652,14 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             self.alpha_composite_clipped(frame, water_tile, px, py, view_w, world_h)
 
     def draw_world_player(self, frame: Image.Image, px: int, py: int) -> None:
-        self.draw_player_sprite(frame, px, py, offset=(-2, -1))
+        # Level-0 draw path SAM1:0x20CE..0x21E4 uses DS:34EE/34F0 directly.
+        # Earlier ports drew the world-map sprite at -2/-1 relative to the
+        # gameplay origin, making the ASM 10x16 collision rect look too wide.
+        self.draw_player_sprite(frame, px, py)
 
     def draw_player_sprite(self, frame: Image.Image, px: int, py: int, *, offset: tuple[int, int] = (0, 0)) -> None:
         if self.is_world_map:
-            tile_ref = (13, 0)
+            tile_ref = player_tile(state=self.player.anim_state, walk_counter=self.player.walk_counter)
         elif self.player_dead_timer > 0:
             # Player death uses the two dedicated bank-13 cels after the jump/air
             # cels.  Toggle them during the DS:69F6 countdown; do not freeze on
@@ -2527,16 +2711,16 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
     def draw_entities(self, frame: Image.Image, cam_x: int, cam_y: int) -> None:
         for platform in self.entities.platforms:
             rx, ry = self.entity_render_position(platform)
-            self.draw_code_sprite(frame, platform.code, int(rx - cam_x), int(ry - cam_y))
+            self.draw_code_sprite(frame, platform.code, self.render_coord(rx - cam_x), self.render_coord(ry - cam_y))
         for barrel in self.entities.barrels:
             rx, ry = self.entity_render_position(barrel)
-            self.draw_code_sprite(frame, barrel.code, int(rx - cam_x), int(ry - cam_y))
+            self.draw_code_sprite(frame, barrel.code, self.render_coord(rx - cam_x), self.render_coord(ry - cam_y))
         for satellite in self.entities.satellites:
             tile = self.episode.tiles16.get(*satellite_tile(satellite.frame_index))
             if tile:
                 tile = self.apply_enemy_hit_flash(tile, satellite)
                 rx, ry = self.entity_render_position(satellite)
-                frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+                frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
         for enemy in self.entities.enemies:
             if enemy.code == 0x24:
                 multi_refs = state27_actor_refs(
@@ -2560,7 +2744,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                             tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                         tile = self.apply_enemy_hit_flash(tile, enemy)
                         rx, ry = self.entity_render_position(enemy)
-                        frame.alpha_composite(tile, (int(rx - cam_x + relx * TILE), int(ry - cam_y + rely * TILE)))
+                        frame.alpha_composite(tile, (self.render_coord(rx - cam_x + relx * TILE), self.render_coord(ry - cam_y + rely * TILE)))
                 continue
             if enemy.bank == 14 and enemy.base_tile is not None:
                 animated = bank14_guard_tile(enemy.base_tile, direction=enemy.direction, frame_counter=enemy.frame_counter)
@@ -2572,14 +2756,14 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                     tile = self.episode.tiles16.get(bank, tile_no)
                     if tile:
                         tile = self.apply_enemy_hit_flash(tile, enemy)
-                        frame.alpha_composite(tile, (int(rx - cam_x + relx * TILE), int(ry - cam_y + rely * TILE)))
+                        frame.alpha_composite(tile, (self.render_coord(rx - cam_x + relx * TILE), self.render_coord(ry - cam_y + rely * TILE)))
                 continue
             if enemy.kind == "state2c_anim":
                 tile = self.episode.tiles16.get(*state2c_tile(enemy.code, enemy.frame_counter))
                 if tile:
                     tile = self.apply_enemy_hit_flash(tile, enemy)
                     rx, ry = self.entity_render_position(enemy)
-                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+                    frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
                     continue
             if enemy.kind == "state17_landmine":
                 # State 0x17 was updating DS:34D6 correctly, but the renderer
@@ -2589,7 +2773,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                 tile = self.episode.tiles16.get(*state17_landmine_tile(enemy.object_id, enemy.frame_counter))
                 if tile:
                     rx, ry = self.entity_render_position(enemy)
-                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+                    frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
                     continue
             if animated is not None:
                 tile = self.episode.tiles16.get(*animated)
@@ -2604,23 +2788,23 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
                         tile = tile.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
                     tile = self.apply_enemy_hit_flash(tile, enemy)
                     rx, ry = self.entity_render_position(enemy)
-                    frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+                    frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
                     continue
             rx, ry = self.entity_render_position(enemy)
-            self.draw_code_sprite(frame, enemy.code, int(rx - cam_x), int(ry - cam_y))
+            self.draw_code_sprite(frame, enemy.code, self.render_coord(rx - cam_x), self.render_coord(ry - cam_y))
         for spike in self.entities.spike_traps:
             tile_ref = spike_frame_for_timer(spike.kind, spike.timer_ticks)
             if tile_ref is not None:
                 tile = self.episode.tiles16.get(*tile_ref)
                 if tile:
-                    frame.alpha_composite(tile, (int(spike.x - cam_x), int(spike.draw_y - cam_y)))
+                    frame.alpha_composite(tile, (self.render_coord(spike.x - cam_x), self.render_coord(spike.draw_y - cam_y)))
         for beam in self.entities.beam_traps:
             self.draw_beam_trap(frame, beam, cam_x, cam_y)
         draw = ImageDraw.Draw(frame)
         for shot in self.entities.projectiles:
             rx, ry = self.entity_render_position(shot)
-            x = int(rx - cam_x)
-            y = int(ry - cam_y)
+            x = self.render_coord(rx - cam_x)
+            y = self.render_coord(ry - cam_y)
             if shot.is_impact:
                 if shot.impact_visible:
                     boom_frames = (24, 25, 26, 27)
@@ -2646,12 +2830,12 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             tile = self.episode.tiles16.get(5, boom_frames[min(len(boom_frames) - 1, explosion.frame_counter // 3)])
             if tile:
                 rx, ry = self.entity_render_position(explosion)
-                frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+                frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
         for popup in self.entities.score_popups:
             tile = self.episode.tiles16.get(10, popup.tile)
             if tile:
                 rx, ry = self.entity_render_position(popup)
-                frame.alpha_composite(tile, (int(rx - cam_x), int(ry - cam_y)))
+                frame.alpha_composite(tile, (self.render_coord(rx - cam_x), self.render_coord(ry - cam_y)))
 
     def draw_beam_trap(self, frame: Image.Image, beam: BeamTrap, cam_x: int, cam_y: int) -> None:
         # Bank 3 beam objects are not telescoping bars.  The static end pieces
@@ -2676,7 +2860,7 @@ class OpenAgentApp(HUDMixin, PlayerLifecycleMixin, CombatMixin, OverworldMixin):
             tile = self.episode.tiles16.get(bank, tile_no)
             if tile:
                 rx, ry = self.entity_render_position(beam)
-                frame.alpha_composite(tile, (int(rx - cam_x + relx * TILE), int(ry - cam_y + rely * TILE)))
+                frame.alpha_composite(tile, (self.render_coord(rx - cam_x + relx * TILE), self.render_coord(ry - cam_y + rely * TILE)))
 
     def draw_code_sprite(self, frame: Image.Image, code: int, px: int, py: int) -> None:
         from openagent.game_assets.mapping import TILE_MAP

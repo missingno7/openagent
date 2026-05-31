@@ -102,23 +102,33 @@
         "docs/passes/exe_mechanisms_pass57.md",
         "docs/passes/exe_mechanisms_pass62.md",
         "docs/passes/exe_mechanisms_pass63.md",
-        "docs/passes/exe_mechanisms_pass92.md"
+        "docs/passes/exe_mechanisms_pass92.md",
+        "docs/passes/exe_mechanisms_pass102.md",
+        "docs/passes/exe_mechanisms_pass105.md",
+        "docs/passes/exe_mechanisms_pass106.md"
       ],
       "asm_refs": [
         "DS:69F5",
         "DS:69F6",
-        "DS:6A40"
+        "DS:6A40",
+        "SAM1:0x1A61..0x1AE8",
+        "DS:683A+0xB8",
+        "SAM1:0x8000..0x8105",
+        "SAM1:0x1A21..0x1B5D",
+        "SAM1:0x7FA6..0x8105"
       ],
       "confidence": "medium-high",
       "known_gaps": [
-        "The hard-death bounce arc and mission-state reset are implemented, but the exact 0x520:0x011A restart helper still needs tracing for score/ammo/inventory persistence.",
+        "Normal mission camera outside the DS:69F5 branch is still a centered helper rather than a full DS:6838/DS:683A reconstruction.",
         "Game-over/menu flow when lives reaches zero is still approximated for playtesting.",
-        "Death draw cel timing should be visually compared against a DOSBox capture."
+        "DS:6EC1 transient edge cases in the platform catch branch are still only partially represented."
       ],
       "next_actions": [
         "Trace the far call reached when DS:69F6 decrements to zero and record which globals it resets.",
         "Capture mine/water/laser death in DOSBox and compare the bank-13 two-cel timing.",
-        "Add a deterministic runtime test for the 34-tick signed death displacement sequence."
+        "Add a deterministic runtime test for the 34-tick signed death displacement sequence.",
+        "Run tools/check_death_reset.py when touching the death/restart path.",
+        "Run tools/check_death_camera_platform.py when touching death camera, death clamp, or moving-platform carry behavior."
       ]
     },
     {
@@ -538,9 +548,10 @@
       "raw_codes": [],
       "objects": [],
       "states": [],
-      "status": "heuristic",
+      "status": "asm_partial",
       "implemented_in": [
         "openagent/overworld.py",
+        "openagent/exe_world_collision.py",
         "openagent/runtime.py",
         "tools/audit_overworld_data.py"
       ],
@@ -549,23 +560,39 @@
         "docs/passes/exe_mechanisms_pass77.md",
         "docs/OVERWORLD_RESEARCH.md",
         "docs/passes/exe_mechanisms_pass78.md",
-        "docs/registry/overworld_level0_inventory.json"
+        "docs/registry/overworld_level0_inventory.json",
+        "docs/passes/exe_mechanisms_pass98.md",
+        "docs/passes/exe_mechanisms_pass99.md",
+        "docs/passes/exe_mechanisms_pass100.md",
+        "docs/passes/exe_mechanisms_pass101.md",
+        "docs/passes/exe_mechanisms_pass102.md"
       ],
       "asm_refs": [
-        "not yet isolated; needs dedicated level-0 movement/collision/entrance trace"
+        "SAM1:0x035B..0x044B keyboard ISR only enables overworld up/down flags when DS:681C == 1",
+        "SAM1:0xBAF5..0xBC0A top-down overworld movement routine",
+        "SAM1:0xB7D9..0xB8B0 collision helper samples runtime +0x1CC at 10x16 player-origin probes",
+        "SAM1:0x10811 level-0 branch selects the CS:0x2E20 world-map collision parser instead of mission parser tables",
+        "SAM1:0x2059..0x209F overworld teleport/reposition camera recenter clamps DS:6838/683A",
+        "SAM1:0xBAF5..0xBC0A processes overworld direction flags right, left, down, up and scrolls DS:6838/683A with fixed thresholds",
+        "SAM1:0x20CE..0x21E4 player draw path uses DS:3500/34F6 and DS:34EE/34F0 directly",
+        "SAM1:0x60..0x460 keyboard/state branches set walk/idle direction states 0x01/0x05/0x09/0x0A",
+        "Level-0 parser active house cels map to bank-1 12..15 and checked variants to bank-1 16..19"
       ],
-      "confidence": "low",
+      "confidence": "medium",
       "known_gaps": [
-        "Raw level-0 marker inventory is now reproducible via tools/audit_overworld_data.py.",
-        "Data facts for 0x59 and 0x4D/0x4F/0x50 are confirmed, but collision remains heuristic.",
-        "Entrance-to-level mapping is row-major prototype behavior, not ASM-verified.",
-        "Completion flags and original popup/table windows are not implemented."
+        "Raw level-0 marker inventory is reproducible via tools/audit_overworld_data.py.",
+        "Some visual terrain-looking tiles are intentionally body-clear in the recovered table, e.g. raw 0x30.",
+        "Movement/collision/camera/draw/entry is ASM-partial: level 0 uses the dedicated CS:0x2E20 collision parser, offset-before-write movement, DS:6838/683A camera registers, DS:3500/34F6 player animation, static 0x59 marker suppression, and origin-based automatic house entry/release.",
+        "Entrance-to-level mapping is still row-major prototype behavior, not ASM-verified.",
+        "Completion redraw uses bank-1 checked cels 16..19 and completed houses remain re-enterable, but persistent completion/progression flags are not fully traced.",
+        "Original popup/table windows are not implemented."
       ],
       "next_actions": [
-        "Trace the EXE top-down world-map movement routine.",
-        "Recover the original world-map collision table or predicate.",
-        "Trace entrance marker handling and completed-level flags.",
-        "Separate original popup/table renderer from prototype entrance-number overlay."
+        "Trace the exact entrance dispatch table/flags that map building markers to mission numbers.",
+        "Trace persistent completed-level flags and episode progression after mission exit.",
+        "Trace original popup/table window drawing for level selection.",
+        "Compare pass-102 world movement/collision/draw/entry against DOSBox captures at any remaining problematic coordinates.",
+        "Run tools/check_overworld_collision.py after changing level-0 movement, entry, or completion visuals."
       ]
     }
   ]

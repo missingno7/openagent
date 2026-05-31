@@ -34,9 +34,16 @@ def analyse_episode(campaign, ep: int) -> dict:
         counts[cell.code] += 1
         positions[cell.code].append({"x": cell.x, "y": cell.y, "layer": cell.layer, "raw_row": cell.raw_row})
 
+    # Runtime/pass101 treats adjacent 0x4D/0x4E as a single wide building
+    # footprint.  Keep this audit aligned with the playable entrance anchors
+    # while still reporting the raw code at the anchor cell.
     entrances = []
+    by_pos_layer = {(int(p["x"]), int(p["y"]), str(p["layer"])): code
+                    for code, plist in positions.items() for p in plist}
     for code in sorted(WORLD_ENTRANCE_CODES):
         for p in positions.get(code, []):
+            if code == 0x4E and by_pos_layer.get((int(p["x"]) - 1, int(p["y"]), str(p["layer"]))) == 0x4D:
+                continue
             entrances.append({"code": f"0x{code:02X}", **p})
     entrances.sort(key=lambda p: (int(p["y"]), int(p["x"]), str(p["layer"])))
     for i, ent in enumerate(entrances, start=1):

@@ -1,6 +1,6 @@
 # Next Research Queue
 
-Highest-value unknowns after pass 96.
+Highest-value unknowns after pass 106.
 
 ## UI / overworld / tables
 
@@ -9,8 +9,9 @@ Highest-value unknowns after pass 96.
    - `DS:6E3A` menu/table page 1
    - the `DS:6E32` mission HUD slot map is already covered by pass 93
 2. Identify the original menu/title strings and their control codes.
-3. Map overworld entrance handling, completion flags, and popup/table dialogs.
-4. Replace prototype overworld labels with the real table/popup renderer.
+3. Trace the exact overworld entrance-to-level mapping and persistent completion/progression flags; runtime now has automatic origin-based entry, checked-house redraw, and re-entry after completion, but the dispatch table is still row-major.
+4. Compare the pass-102 movement/collision/draw/entry model against DOSBox reference paths at any remaining problematic coordinates.
+5. Replace prototype overworld labels with the real table/popup renderer.
 
 ## Player lifecycle
 
@@ -19,8 +20,9 @@ Highest-value unknowns after pass 96.
    - exact game-over/menu branch when lives reaches zero,
    - whether any per-level completion/checkpoint state survives.
 2. Capture a DOSBox reference for the two-cel death draw timing and compare it
-   with the current bank-13 tile selection.
+   with the current bank-13 tile selection, especially at the `DS:683A+0xB8` bottom clamp.
 3. Audit generic hurt vs hard death callers and write a single damage policy module.
+4. Recheck transient `DS:6EC1` meanings in the moving-platform catch branch; pass 106 models the missing `DS:69F5` behavior, but not every edge of jump/carry state.
 
 ## Projectiles and enemy hit behavior
 
@@ -31,7 +33,7 @@ Highest-value unknowns after pass 96.
 
 ## Remaining gameplay mechanics
 
-1. Overworld progression and per-level completion.
+1. Exact overworld entrance dispatch/progression flags beyond the runtime-local checked-house redraw.
 2. Door/key variants beyond the dynamite exit.
 3. Moving platforms and hidden platforms against exact runtime collision writes.
 4. Animated decorative tiles that still use heuristic frame ranges.
@@ -70,18 +72,7 @@ Highest priority suspects:
 ## Dedicated overworld ASM audit
 
 Level 0 now has its own module (`openagent/overworld.py`) and research note
-(`docs/OVERWORLD_RESEARCH.md`).  The highest-value next ASM task is to replace
-heuristic `WORLD_BLOCKED_CODES` with the original island-map tile test, then
-trace entrance marker handling and completion flags.
-
-### Pass 78 immediate overworld next step
-
-Before changing world-map movement, run:
-
-```bash
-python tools/audit_overworld_data.py
-```
-
-Then trace the EXE branch that reads player input while level `0` is active and
-compare every collision decision against the raw code positions in
-`docs/registry/overworld_level0_inventory.json`.
+(`docs/OVERWORLD_RESEARCH.md`).  Pass 98 replaced the broad visual collision
+heuristic with the original top-down `+0x1CC` body-byte helper.  The next useful
+ASM tasks are now entrance marker handling, completion flags, original popup
+windows, a DOSBox movement reference capture for any remaining troublesome coordinates, and exact entrance/menu behavior.
